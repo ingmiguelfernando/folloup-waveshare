@@ -1,5 +1,8 @@
 name: build
-on: workflow_dispatch
+on:
+  push:
+    branches: [folloup-waveshare]
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -9,7 +12,13 @@ jobs:
         with:
           esp_idf_version: v5.5.4
           target: esp32s3
-          command: curl -sSL -o sdkconfig https://raw.githubusercontent.com/alxv2016/folloup-sticky/896b393e504027de0a0bb44e5417715925bccf7f/sdkconfig && idf.py build && cd build && python -m esptool --chip esp32s3 merge_bin -o followup-waveshare.bin @flash_args
+          # sdkconfig.waveshare is the author's known-working config; sdkconfig.defaults alone boot-loops (ESP_ERR_NO_MEM).
+          command: cp sdkconfig.waveshare sdkconfig && idf.py build && idf.py size > build/size.txt && cd build && python -m esptool --chip esp32s3 merge_bin -o followup-waveshare.bin @flash_args
+      - name: Memory report
+        run: |
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          cat build/size.txt >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
         with:
           name: firmware

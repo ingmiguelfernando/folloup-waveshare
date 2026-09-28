@@ -39,11 +39,14 @@ esp_err_t InitializeCardLocked()
         return ESP_OK;
     }
 
+    // Must match the app-side mount in storage_service (slot 1, 20 MHz, internal pull-ups).
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
-    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
+    host.slot = SDMMC_HOST_SLOT_1;
+    host.max_freq_khz = SDMMC_FREQ_DEFAULT;
 
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config.width = 4;
+    slot_config.flags |= SDMMC_SLOT_FLAG_INTERNAL_PULLUP;
     slot_config.clk = WAVESHARE_SD_CLK_PIN;
     slot_config.cmd = WAVESHARE_SD_CMD_PIN;
     slot_config.d0 = WAVESHARE_SD_D0_PIN;

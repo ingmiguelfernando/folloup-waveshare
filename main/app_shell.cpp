@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "bible_page_runtime.h"
+#include "book_page_runtime.h"
 #include "button_input_runtime.h"
 #include "button_service.h"
 #include "device_sleep_service.h"
@@ -31,6 +32,7 @@
 #include "power_key_runtime.h"
 #include "power_service.h"
 #include "project_assets.h"
+#include "reading_picker_runtime.h"
 #include "recording_session_service.h"
 #include "recording_service.h"
 #include "sdkconfig.h"
@@ -467,6 +469,54 @@ void HandleBibleExitIfRequested()
     }
 }
 
+// Same full-screen reader contract as the Bible page: no footer, UP/DOWN turn
+// pages and OK opens its menu.
+esp_err_t ShowBookScreen(const std::string& filename, display_service::RefreshMode refresh_mode)
+{
+    SyncStatusBarState("show_book_screen");
+    footer_runtime::LayoutState hidden_footer = {};
+    hidden_footer.visible = false;
+    hidden_footer.show_mic = false;
+    footer_runtime::SetLayoutState(hidden_footer);
+    const esp_err_t page_err = book_page_runtime::Prepare(filename);
+    if (page_err != ESP_OK && page_err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(kTag, "Book page state build failed: %s", esp_err_to_name(page_err));
+    }
+    return display_service::SetCurrentScreen(display_service::ScreenId::kBookReader, refresh_mode,
+                                             "show_book_screen");
+}
+
+void HandleBookExitIfRequested()
+{
+    if (!book_page_runtime::ConsumePendingExit()) {
+        return;
+    }
+    const esp_err_t err = ShowHomeScreen(display_service::RefreshMode::kFull);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(kTag, "Book exit -> home failed: %s", esp_err_to_name(err));
+    }
+}
+
+void HandleReadingPickerSelectionIfRequested()
+{
+    reading_picker_runtime::Selection selection = {};
+    if (!reading_picker_runtime::ConsumePendingSelection(&selection)) {
+        return;
+    }
+    if (selection.open_bible) {
+        const esp_err_t err = ShowBibleScreen(display_service::RefreshMode::kFull);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(kTag, "Show Bible screen failed: %s", esp_err_to_name(err));
+        }
+    } else if (!selection.book_filename.empty()) {
+        const esp_err_t err =
+            ShowBookScreen(selection.book_filename, display_service::RefreshMode::kFull);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(kTag, "Show book screen failed: %s", esp_err_to_name(err));
+        }
+    }
+}
+
 esp_err_t ShowDetailsScreen(const std::string& recording_id, DetailsPageSource source,
                             display_service::RefreshMode refresh_mode)
 {
@@ -738,10 +788,10 @@ bool HandleDashboardMenuItem(int menu_index, void*)
         }
         return true;
     }
-    if (menu_index == static_cast<int>(epaper_ui::DashboardMenuItem::kBible)) {
-        const esp_err_t err = ShowBibleScreen(display_service::RefreshMode::kFull);
-        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-            ESP_LOGW(kTag, "Show Bible screen failed: %s", esp_err_to_name(err));
+    if (menu_index == static_cast<int>(epaper_ui::DashboardMenuItem::kRead)) {
+        // Unified "Read" entry: pick the Bible or a .txt book from the SD.
+        if (!reading_picker_runtime::Open()) {
+            ESP_LOGW(kTag, "Show reading picker failed");
         }
         return true;
     }
@@ -919,6 +969,8 @@ void HandleRecordingSessionEvent(const recording_session_service::Event& event, 
         case recording_session_service::Phase::kAwaitingTagSelection: {
             time_page_runtime::ClearPendingSelectModal();
             ota_prompt_runtime::ClearPendingSelectModal();
+            book_page_runtime::ClearPendingSelectModal();
+            reading_picker_runtime::ClearPendingSelectModal();
             bible_page_runtime::ClearPendingSelectModal();
             const esp_err_t err =
                 overlay_runtime::ShowSelectModal(BuildRecordingTagSelectModalState());
@@ -1281,6 +1333,8 @@ void HandleDispatchedButtonEvent(const button_service::ButtonEventInfo& event)
                 overlay_result.select_modal_selected_index) &&
             !bible_page_runtime::HandleSelectModalSubmit(
                 overlay_result.select_modal_selected_index) &&
+            !reading_picker_runtime::HandleSelectModalSubmit(
+                overlay_result.select_modal_selected_index) &&
             !ota_prompt_runtime::HandleSelectModalSubmit(
                 overlay_result.select_modal_selected_index)) {
             (void)recording_session_service::SubmitTagSelection(
@@ -1288,6 +1342,8 @@ void HandleDispatchedButtonEvent(const button_service::ButtonEventInfo& event)
         }
         ShowDetailsScreenIfRequested();
         HandleBibleExitIfRequested();
+        HandleBookExitIfRequested();
+        HandleReadingPickerSelectionIfRequested();
     }
     if (overlay_result.request_format_sd_card) {
         const esp_err_t err = storage_service::RequestFormatSdCard();
@@ -1379,6 +1435,8 @@ void HandleDispatchedButtonEvent(const button_service::ButtonEventInfo& event)
         HandleOnboardingDismissIfRequested();
         ShowOnboardingFromSettingsIfRequested();
         HandleBibleExitIfRequested();
+        HandleBookExitIfRequested();
+        HandleReadingPickerSelectionIfRequested();
         FlushOverlayFeedback();
         return;
     }

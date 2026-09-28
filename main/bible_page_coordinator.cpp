@@ -10,7 +10,7 @@ constexpr const char* kNoBibleMessage =
     "No Bible found on the SD card. Generate the bible folder with "
     "scripts/bible_json_to_sd.py and copy it to the root of the card.";
 constexpr const char* kLoadErrorMessage = "Could not read this chapter from the SD card.";
-constexpr const char* kHintText = "OK: menu";
+constexpr const char* kHintText = "OK: menu (Exit inside)";
 
 epaper_ui::BibleTextSize ClampTextSize(int value)
 {

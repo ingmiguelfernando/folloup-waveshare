@@ -23,6 +23,8 @@ struct BiblePageLine {
 };
 
 // Full-screen reader: title (book + chapter), one page of pre-wrapped lines, page indicator.
+// This is the shared reader render: epaper_ui/reader_page.h aliases these types for the
+// .txt book reader so both screens paginate and draw identically.
 struct BiblePageState {
     std::string title_text = {};
     std::string position_text = {};

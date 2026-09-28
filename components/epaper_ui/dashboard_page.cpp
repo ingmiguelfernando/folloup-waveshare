@@ -18,7 +18,7 @@ constexpr int kMinMenuItemHeight = design::spacing::k56;
 constexpr auto kProgressLabelRole = design::TypographyRole::kLabelSmallBlack;
 
 constexpr std::array<const char*, kDashboardMenuItemCount> kMenuLabels = {
-    "Follow up", "Summarize", "Vibe check", "Notes", "Todos", "Bible",
+    "Follow up", "Summarize", "Vibe check", "Notes", "Todos", "Read",
 };
 
 int PageWidth(int portrait_width)

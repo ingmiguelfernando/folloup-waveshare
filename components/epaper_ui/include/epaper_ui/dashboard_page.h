@@ -23,7 +23,7 @@ enum class DashboardMenuItem : int {
     kVibeCheck,
     kNotes,
     kTodos,
-    kBible,
+    kRead,
 };
 
 struct DashboardPageMenuState {

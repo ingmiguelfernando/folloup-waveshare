@@ -14,7 +14,6 @@
 #include "display_service.h"
 #include "esp_err.h"
 #include "esp_log.h"
-#include "esp_ota_ops.h"
 #include "esp_partition.h"
 #include "feedback_service.h"
 #include "footer_runtime.h"
@@ -40,6 +39,8 @@
 #include "notes_page_runtime.h"
 #include "nvs.h"
 #include "onboarding_page_runtime.h"
+#include "ota_prompt_runtime.h"
+#include "ota_service.h"
 #include "status_bar_runtime.h"
 #include "todos_page_runtime.h"
 #include "storage_service.h"
@@ -711,18 +712,6 @@ bool HandleDashboardMenuItem(int menu_index, void*)
     return false;
 }
 
-void ConfirmPendingOtaImage()
-{
-    const esp_partition_t* running = esp_ota_get_running_partition();
-    esp_ota_img_states_t ota_state = ESP_OTA_IMG_UNDEFINED;
-
-    if (running != nullptr &&
-        esp_ota_get_state_partition(running, &ota_state) == ESP_OK &&
-        ota_state == ESP_OTA_IMG_PENDING_VERIFY) {
-        ESP_ERROR_CHECK(esp_ota_mark_app_valid_cancel_rollback());
-    }
-}
-
 const char* ButtonIdName(button_service::ButtonId button)
 {
     switch (button) {
@@ -893,6 +882,7 @@ void HandleRecordingSessionEvent(const recording_session_service::Event& event, 
     switch (event.snapshot.phase) {
         case recording_session_service::Phase::kAwaitingTagSelection: {
             time_page_runtime::ClearPendingSelectModal();
+            ota_prompt_runtime::ClearPendingSelectModal();
             const esp_err_t err =
                 overlay_runtime::ShowSelectModal(BuildRecordingTagSelectModalState());
             FlushOverlayFeedback();
@@ -1210,6 +1200,7 @@ void HandleWifiEvent(const wifi_service::Event& event, void*)
     timezone_service::SetNetworkConnected(event.ui_state.connected);
     gemini_service::SetNetworkState(event.ui_state.connected,
                                     event.ui_state.access_point_mode);
+    ota_service::SetNetworkConnected(event.ui_state.connected);
 
     // Region scope, not screen scope. Wi-Fi events fire during and right after the page
     // transition, and a screen-scope partial re-inits the panel and drives it whatever the
@@ -1250,6 +1241,8 @@ void HandleDispatchedButtonEvent(const button_service::ButtonEventInfo& event)
             !follow_up_page_runtime::HandleItemActionSelection(
                 overlay_result.select_modal_selected_index) &&
             !time_page_runtime::HandleSelectModalSubmit(
+                overlay_result.select_modal_selected_index) &&
+            !ota_prompt_runtime::HandleSelectModalSubmit(
                 overlay_result.select_modal_selected_index)) {
             (void)recording_session_service::SubmitTagSelection(
                 overlay_result.select_modal_selected_index);
@@ -1609,6 +1602,29 @@ void InitGeminiService()
     }
 }
 
+void HandleOtaEvent(const ota_service::Event& event, void*)
+{
+    ESP_LOGI(kTag, "OTA intent: state=%s running=%s available=%s progress=%d error=%s",
+             ota_service::StateName(event.snapshot.state),
+             event.snapshot.running_version.c_str(),
+             event.snapshot.available_version.empty()
+                 ? "<none>"
+                 : event.snapshot.available_version.c_str(),
+             event.snapshot.progress_percent,
+             event.snapshot.error_message.empty() ? "<none>"
+                                                  : event.snapshot.error_message.c_str());
+    ota_prompt_runtime::HandleOtaEvent(event);
+}
+
+void InitOtaService()
+{
+    ota_service::SetEventHandler(HandleOtaEvent, nullptr);
+    const esp_err_t err = ota_service::Init();
+    if (err != ESP_OK) {
+        ESP_LOGW(kTag, "OTA service init failed: %s", esp_err_to_name(err));
+    }
+}
+
 void InitWifiService()
 {
     wifi_service::SetEventHandler(HandleWifiEvent, nullptr);
@@ -1727,7 +1743,7 @@ void InitDeviceSleepRuntime()
 void Run()
 {
     ESP_ERROR_CHECK(power_service::EnablePowerHold());
-    ConfirmPendingOtaImage();
+    InitOtaService();
     ESP_ERROR_CHECK(power_service::Init());
     power_service::LogDebugStatus();
     InitFeedbackService();

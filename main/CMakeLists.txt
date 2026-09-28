@@ -6,6 +6,7 @@ idf_component_register(SRCS "onboarding_page_runtime.cpp" "onboarding_page_inter
                             "input_focus_runtime.cpp"
                             "lock_screen_runtime.cpp"
                             "overlay_runtime.cpp"
+                            "ota_prompt_runtime.cpp"
                             "power_key_runtime.cpp"
                             "wifi_page_coordinator.cpp"
                             "status_bar_runtime.cpp"
@@ -14,7 +15,7 @@ idf_component_register(SRCS "onboarding_page_runtime.cpp" "onboarding_page_inter
                        REQUIRES app_update axp2101 board button_service display_service feedback_service
                                 device_sleep_service epaper_ui esp_driver_gpio
                                 esp_hw_support esp_partition gemini_service imu_service power_service
-                                nvs_flash page_navigation playback_service project_assets
+                                nvs_flash ota_service page_navigation playback_service project_assets
                                 recording_archive_service
                                 recording_service recording_session_service storage_service
                                 summary_service task_config timezone_service

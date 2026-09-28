@@ -19,6 +19,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "imu_service.h"
+#include "ota_service.h"
 #include "recording_service.h"
 #include "status_bar_runtime.h"
 #include "waveshare_board_config.h"
@@ -162,6 +163,10 @@ device_sleep_service::BlockerReason GetAutoSleepBlocker(void*)
 
     if (timezone_service::IsSyncInProgress()) {
         return device_sleep_service::BlockerReason::kTimeSync;
+    }
+
+    if (ota_service::IsBusy()) {
+        return device_sleep_service::BlockerReason::kFirmwareUpdate;
     }
 
     if (display_service::IsRefreshInProgress()) {

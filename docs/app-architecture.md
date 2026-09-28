@@ -94,6 +94,10 @@ onboarding, and a set of feature pages plus overlays) built on:
   inactivity timing, app-level blocker checks, and staged sleep events.
 - A `task_config` component that owns the app-created FreeRTOS task priority
   and core-affinity mapping.
+- An `ota_service` component that checks the latest GitHub Release
+  (`version.txt`), installs `followup-app.bin` with `esp_https_ota`, and only
+  confirms a freshly installed image (cancelling rollback) once Wi-Fi connects.
+  `main/ota_prompt_runtime` owns the install prompt and progress toasts.
 The board carries an SHTC3 temperature/humidity sensor on the shared sensor I2C
 bus. It is not driven by any component today.
 

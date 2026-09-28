@@ -1,0 +1,10 @@
+menu "Folloup OTA"
+
+    config FOLLOWUP_OTA_URL_BASE
+        string "Firmware release base URL"
+        default "https://github.com/ingmiguelfernando/folloup-waveshare/releases/latest/download"
+        help
+            HTTPS base URL that serves version.txt and followup-app.bin. The
+            default points at the latest GitHub Release published by CI.
+
+endmenu

@@ -3,19 +3,25 @@ on:
   push:
     branches: [folloup-waveshare]
   workflow_dispatch:
+permissions:
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # ESP-IDF reads version.txt as the app version; the device compares it against the release.
+      - name: Set firmware version
+        run: echo "ci-${{ github.run_number }}-${GITHUB_SHA::7}" > version.txt
       - uses: espressif/esp-idf-ci-action@v1
         with:
           esp_idf_version: v5.5.4
           target: esp32s3
           # sdkconfig.waveshare is the author's known-working config; sdkconfig.defaults alone boot-loops (ESP_ERR_NO_MEM).
-          command: cp sdkconfig.waveshare sdkconfig && idf.py build && idf.py size > build/size.txt && cd build && python -m esptool --chip esp32s3 merge_bin -o followup-waveshare.bin @flash_args
+          command: cp sdkconfig.waveshare sdkconfig && idf.py build && idf.py size > build/size.txt && cd build && python -m esptool --chip esp32s3 merge_bin -o followup-waveshare.bin @flash_args && cp folloup_sticky.bin followup-app.bin
       - name: Memory report
         run: |
+          echo "Firmware version: $(cat version.txt)" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
           cat build/size.txt >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
@@ -25,4 +31,19 @@ jobs:
           # The .elf is needed to decode panic backtraces.
           path: |
             build/followup-waveshare.bin
+            build/followup-app.bin
             build/*.elf
+            version.txt
+      # The device downloads version.txt and followup-app.bin from releases/latest.
+      - name: Publish OTA release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Firmware ci-${{ github.run_number }}
+          target_commitish: ${{ github.sha }}
+          make_latest: true
+          files: |
+            version.txt
+            build/followup-app.bin
+            build/followup-waveshare.bin

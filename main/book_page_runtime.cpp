@@ -23,11 +23,13 @@ enum class MenuMode : uint8_t {
     kNone = 0,
     kMain,
     kPage,
+    kPercent,
     kTextSize,
 };
 
 enum MainMenuItem : int {
     kGoToPage = 0,
+    kGoToPercent,
     kTextSize,
     kAbout,
     kExit,
@@ -60,7 +62,7 @@ epaper_ui::SelectModalState MakeModalLocked(MenuMode mode, const std::string& ti
 epaper_ui::SelectModalState MainMenuLocked()
 {
     epaper_ui::SelectModalState state = MakeModalLocked(MenuMode::kMain, "Book");
-    for (const char* label : {"Go to page", "Text size", "About", "Exit"}) {
+    for (const char* label : {"Go to page", "Go to %", "Text size", "About", "Exit"}) {
         state.items.push_back({.label_text = label});
     }
     return state;
@@ -73,6 +75,20 @@ epaper_ui::SelectModalState PageMenuLocked()
         state.items.push_back({.label_text = "Page " + std::to_string(page)});
     }
     state.selected_index = s_coordinator.page();
+    return state;
+}
+
+// Coarse jumps for long books: every 10% of the page count, with the current
+// decile preselected.
+epaper_ui::SelectModalState PercentMenuLocked()
+{
+    epaper_ui::SelectModalState state = MakeModalLocked(MenuMode::kPercent, "Go to %");
+    for (int percent = 0; percent <= 100; percent += 10) {
+        state.items.push_back({.label_text = std::to_string(percent) + "%"});
+    }
+    const int current_decile =
+        std::clamp((s_coordinator.page() * 10) / std::max(1, s_coordinator.page_count()), 0, 10);
+    state.selected_index = current_decile;
     return state;
 }
 
@@ -172,6 +188,9 @@ bool HandleSelectModalSubmit(int selected_index)
                     case kGoToPage:
                         next_modal = PageMenuLocked();
                         break;
+                    case kGoToPercent:
+                        next_modal = PercentMenuLocked();
+                        break;
                     case kTextSize:
                         next_modal = TextSizeMenuLocked();
                         break;
@@ -187,6 +206,9 @@ bool HandleSelectModalSubmit(int selected_index)
                 break;
             case MenuMode::kPage:
                 page_changed = s_coordinator.GoToPage(selected_index);
+                break;
+            case MenuMode::kPercent:
+                page_changed = s_coordinator.GoToPercent(selected_index * 10);
                 break;
             case MenuMode::kTextSize:
                 s_coordinator.SetTextSize(

@@ -39,13 +39,12 @@ void BookPageCoordinator::Open(const std::string& filename)
     error_text_.clear();
     book_ = std::move(loaded);
     available_ = true;
+    book_service::SaveLastOpened(filename);
 
-    position_ = book_service::LoadPosition();
-    if (position_.filename != filename) {
-        // First visit to this book: start at the beginning.
-        position_.filename = filename;
-        position_.page = 0;
-    }
+    position_ = book_service::LoadPosition(filename);
+    // Position keys are per-book; a page outside the freshly paginated range
+    // (book changed size, first open, stale key) clamps to the last page.
+    position_.filename = filename;
     text_size_ = ClampTextSize(position_.text_size);
     Paginate();
     position_.page =
@@ -130,6 +129,16 @@ bool BookPageCoordinator::GoToPage(int page)
     position_.page = std::clamp(page, 0, static_cast<int>(pages_.size()) - 1);
     SavePosition();
     return true;
+}
+
+bool BookPageCoordinator::GoToPercent(int percent)
+{
+    if (!available_ || pages_.empty()) {
+        return false;
+    }
+    percent = std::clamp(percent, 0, 100);
+    const int target = (percent * static_cast<int>(pages_.size())) / 100;
+    return GoToPage(std::min(target, static_cast<int>(pages_.size()) - 1));
 }
 
 void BookPageCoordinator::SetTextSize(epaper_ui::ReaderTextSize size)

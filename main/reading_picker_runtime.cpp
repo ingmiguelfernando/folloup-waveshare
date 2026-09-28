@@ -1,6 +1,7 @@
 #include "reading_picker_runtime.h"
 
 #include <mutex>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -14,6 +15,8 @@ namespace {
 std::mutex s_mutex;
 bool s_menu_open = false;
 std::vector<book_service::BookEntry> s_entries = {};
+bool s_shows_continue = false;
+std::string s_last_opened = {};
 bool s_pending = false;
 Selection s_pending_selection = {};
 
@@ -25,9 +28,27 @@ bool Open()
     (void)book_service::Load();
 
     std::vector<book_service::BookEntry> entries = book_service::Books();
+    const std::string last_opened = book_service::LoadLastOpened();
+
     epaper_ui::SelectModalState state = {};
     state.visible = true;
     state.title_text = "Read";
+    // "Continue" jumps straight back into the last opened book (when it is
+    // still on the card); otherwise the row is hidden.
+    bool shows_continue = false;
+    std::string continue_title;
+    if (!last_opened.empty()) {
+        for (const book_service::BookEntry& entry : entries) {
+            if (entry.filename == last_opened) {
+                shows_continue = true;
+                continue_title = entry.title;
+                break;
+            }
+        }
+    }
+    if (shows_continue) {
+        state.items.push_back({.label_text = "Continue " + continue_title});
+    }
     state.items.push_back({.label_text = "Bible"});
     for (const book_service::BookEntry& entry : entries) {
         state.items.push_back({.label_text = entry.title});
@@ -35,6 +56,8 @@ bool Open()
     {
         std::lock_guard<std::mutex> lock(s_mutex);
         s_entries = std::move(entries);
+        s_shows_continue = shows_continue;
+        s_last_opened = last_opened;
         s_menu_open = true;
     }
     return overlay_runtime::ShowSelectModal(state) == ESP_OK;
@@ -49,10 +72,20 @@ bool HandleSelectModalSubmit(int selected_index)
     s_menu_open = false;
 
     Selection selection = {};
-    if (selected_index == 0) {
+    size_t row = static_cast<size_t>(selected_index);
+    if (s_shows_continue) {
+        if (row == 0) {
+            selection.book_filename = s_last_opened;
+            s_pending_selection = std::move(selection);
+            s_pending = true;
+            return true;
+        }
+        --row;
+    }
+    if (row == 0) {
         selection.open_bible = true;
     } else {
-        const size_t entry_index = static_cast<size_t>(selected_index - 1);
+        const size_t entry_index = row - 1;
         if (entry_index >= s_entries.size()) {
             return true;  // consumed, but an out-of-range row selects nothing
         }

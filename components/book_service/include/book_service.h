@@ -50,11 +50,17 @@ const std::vector<BookEntry>& Books();
 
 // Reads one book into a PSRAM buffer. Files that are not valid UTF-8 are
 // transcoded from CP1252/Latin-1 so Spanish accents and typographic
-// punctuation survive. Rejects files larger than the size cap.
+// punctuation survive. .epub files are unzipped and their chapters are
+// stripped to plain text. Rejects books larger than the size cap.
 esp_err_t LoadBook(const std::string& filename, Book* out_book);
 
-Position LoadPosition();
+// Reading positions persist per book (keyed by a hash of the filename), so
+// every book remembers where the reader left off, not just the last one.
+Position LoadPosition(const std::string& filename);
 void SavePosition(const Position& position);
+// Marks `filename` as the most recently opened book (for the reader menu).
+void SaveLastOpened(const std::string& filename);
+std::string LoadLastOpened();
 
 }  // namespace book_service
 

@@ -27,6 +27,9 @@ public:
     bool NextPage();
     bool PreviousPage();
     bool GoToPage(int page);
+    // Jumps to the page containing `percent` of the book (0..100), e.g. 50
+    // lands on the first page of the second half. False when the book is empty.
+    bool GoToPercent(int percent);
     void SetTextSize(epaper_ui::ReaderTextSize size);
 
     epaper_ui::ReaderPageState BuildState() const;

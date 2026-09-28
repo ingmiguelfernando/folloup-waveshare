@@ -17,15 +17,36 @@ import type {
   XiaozhiModuleResponse,
 } from './types';
 
+// Bounded so a request never hangs forever: the device restarts Wi-Fi right after the
+// portal saves credentials, which drops the AP mid-poll on the phone.
+const REQUEST_TIMEOUT_MS = 10000;
+
 export async function fetchApiJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(path, {
-    cache: 'no-store',
-    ...init,
-    headers: {
-      ...API_HEADERS,
-      ...(init?.headers || {}),
-    },
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let response: Response;
+  try {
+    response = await fetch(path, {
+      cache: 'no-store',
+      ...init,
+      // Own signal so the timeout applies even when the caller passes none.
+      signal: controller.signal,
+      headers: {
+        ...API_HEADERS,
+        ...(init?.headers || {}),
+      },
+    });
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error(
+        `Request timed out: ${path}. The device may be restarting Wi-Fi — ` +
+          'wait ~30-60 s and reload this page.'
+      );
+    }
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
 
   const contentType = response.headers.get('content-type') || '';
   const bodyText = await response.text();

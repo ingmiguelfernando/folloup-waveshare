@@ -32,6 +32,8 @@ struct ScannedNetwork {
     std::string ssid;
     int rssi = 0;
     wifi_auth_mode_t auth_mode = WIFI_AUTH_OPEN;
+    // 2.4 GHz channel the AP beacons on; 0 when the driver did not report one.
+    uint8_t primary = 0;
 
     bool IsOpen() const { return auth_mode == WIFI_AUTH_OPEN; }
 };
@@ -78,8 +80,11 @@ void SetScanDeferProvider(ScanDeferProvider provider, void* context);
 void SetWifiEnabled(bool enabled);
 void SetAccessPointEnabled(bool enabled);
 void EnterAccessPointMode();
+// Queues the station connection. `start_delay_ms` defers the radio restart so a caller
+// (the captive portal) can finish writing an HTTP response before the AP drops; the
+// deferred start is cancelled if another transition is queued first.
 bool ConnectToNetwork(const std::string& ssid, const std::string& password,
-                      bool save_on_success = true);
+                      bool save_on_success = true, uint32_t start_delay_ms = 0);
 bool DisconnectFromNetwork(bool clear_saved_credentials = true);
 bool StartNetworkScan();
 bool ClearSavedCredentials();

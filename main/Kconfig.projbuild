@@ -7,6 +7,14 @@ menu "Folloup Settings"
             Prefix used when the device enters Wi-Fi access-point setup mode.
             The full AP SSID appends the last three Wi-Fi MAC bytes.
 
+    config FOLLOWUP_WIFI_AP_PASSWORD
+        string "Wi-Fi AP password (8-63 chars)"
+        default "followupsetup"
+        help
+            WPA2 passphrase for the Followup-XXXXXX setup access point. Must be
+            8..63 characters; anything else falls back to an open AP with a
+            warning. Change it to keep neighbours off your setup network.
+
     config FOLLOWUP_WIFI_STA_SSID
         string "Built-in Wi-Fi SSID"
         default ""

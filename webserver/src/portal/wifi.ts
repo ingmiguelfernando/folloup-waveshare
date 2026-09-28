@@ -302,17 +302,26 @@ export function createWiFiController(deps: WiFiControllerDeps) {
       for (let attempt = 0; attempt < deps.statusPollAttempts; attempt++) {
         await deps.delayMs(deps.statusPollIntervalMs);
 
-        const statusData = await deps.fetchPortalJson('/api/status');
-        applyPortalStatus(statusData);
+        // The device restarts Wi-Fi after accepting credentials, so the AP drops and
+        // this poll fails for a while; keep polling until the window ends.
+        try {
+          const statusData = await deps.fetchPortalJson('/api/status');
+          applyPortalStatus(statusData);
 
-        if (statusData.connected) {
-          deps.notify(statusData.message || 'Connected.', 'success');
-          break;
+          if (statusData.connected) {
+            deps.notify(statusData.message || 'Connected.', 'success');
+            break;
+          }
+        } catch {
+          // Portal likely unreachable while the radio restarts; try again.
         }
       }
 
       if (!isCurrentlyConnected) {
-        deps.notify('Connection in progress...', 'info');
+        deps.notify(
+          'Connection in progress... If this page stops responding, wait ~30-60 s and reload.',
+          'info'
+        );
       }
     } catch (error) {
       console.error('Connection failed:', error);

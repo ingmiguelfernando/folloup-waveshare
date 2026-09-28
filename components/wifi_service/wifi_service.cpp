@@ -36,6 +36,10 @@ constexpr const char* kSsidKey = "ssid";
 constexpr const char* kPasswordKey = "password";
 constexpr const char* kApUrl = "http://192.168.4.1";
 constexpr int kConnectTimeoutSec = 60;
+// Grace period between answering the captive portal and the radio restart that follows
+// a saved network. Without it esp_wifi_stop() races the httpd response and the phone
+// never learns the request was accepted (the portal hangs on "Connecting...").
+constexpr uint32_t kPortalConnectDelayMs = 2000;
 // Consecutive automatic reconnect attempts before the loop gives up and waits for the
 // user. Every attempt is a full radio stop/start/connect cycle, so out of range an
 // unbounded loop churns the radio -- and the battery -- forever without ever succeeding.
@@ -133,6 +137,8 @@ TaskHandle_t s_transition_task = nullptr;
 TaskHandle_t s_callback_task = nullptr;
 esp_timer_handle_t s_connect_timer = nullptr;
 esp_timer_handle_t s_scan_timeout_timer = nullptr;
+esp_timer_handle_t s_deferred_transition_timer = nullptr;
+TransitionRequest s_deferred_transition_request = TransitionRequest::kStartStation;
 esp_netif_t* s_sta_netif = nullptr;
 esp_netif_t* s_ap_netif = nullptr;
 httpd_handle_t s_portal_server = nullptr;
@@ -276,7 +282,8 @@ std::string DisconnectReasonToString(uint8_t reason)
     return detail;
 }
 
-void ConfigureAccessPointConfig(const std::string& ap_ssid, wifi_config_t* config)
+void ConfigureAccessPointConfig(const std::string& ap_ssid, uint8_t channel,
+                                wifi_config_t* config)
 {
     if (config == nullptr) {
         return;
@@ -285,10 +292,39 @@ void ConfigureAccessPointConfig(const std::string& ap_ssid, wifi_config_t* confi
     *config = {};
     strlcpy(reinterpret_cast<char*>(config->ap.ssid), ap_ssid.c_str(), sizeof(config->ap.ssid));
     config->ap.ssid_len = ap_ssid.size();
-    config->ap.channel = 1;
+    // Follow the router's channel when known (channel != 0) so the AP does not hop
+    // channels under a phone that is already associated during a portal-driven
+    // reconnect. Standalone setup has no target to follow and stays on channel 1.
+    config->ap.channel = channel != 0 ? channel : 1;
     config->ap.max_connection = 4;
-    config->ap.authmode = WIFI_AUTH_OPEN;
+    const char* password = CONFIG_FOLLOWUP_WIFI_AP_PASSWORD;
+    const size_t password_len = strlen(password);
+    if (password_len >= 8 && password_len < sizeof(config->ap.password)) {
+        strlcpy(reinterpret_cast<char*>(config->ap.password), password,
+                sizeof(config->ap.password));
+        config->ap.authmode = WIFI_AUTH_WPA2_PSK;
+    } else {
+        // WPA2 passphrases must be 8..63 chars; fall back to an open AP rather than
+        // feeding the driver a config it rejects at esp_wifi_set_config().
+        ESP_LOGW(kTag, "FOLLOWUP_WIFI_AP_PASSWORD must be 8..63 chars; starting open AP");
+        config->ap.authmode = WIFI_AUTH_OPEN;
+    }
     config->ap.pmf_cfg.required = false;
+}
+
+// Best-known 2.4 GHz channel for an SSID from the last scan; 0 when unknown.
+uint8_t ScannedChannelForSsid(const std::string& ssid)
+{
+    std::lock_guard<std::mutex> lock(s_state_mutex);
+    uint8_t channel = 0;
+    int best_rssi = -1000;
+    for (const ScannedNetwork& network : s_scan_snapshot.networks) {
+        if (network.ssid == ssid && network.primary != 0 && network.rssi > best_rssi) {
+            best_rssi = network.rssi;
+            channel = network.primary;
+        }
+    }
+    return channel;
 }
 
 void ConfigureStationConfig(const Credentials& credentials, wifi_config_t* config)
@@ -840,7 +876,7 @@ esp_err_t HandlePortalConfigure(httpd_req_t* request)
         return SendJsonResponse(request, 400, root);
     }
 
-    if (!ConnectToNetwork(ssid, password, true)) {
+    if (!ConnectToNetwork(ssid, password, true, kPortalConnectDelayMs)) {
         cJSON* root = cJSON_CreateObject();
         cJSON_AddBoolToObject(root, "success", false);
         cJSON_AddStringToObject(root, "message", "Failed to start Wi-Fi connection");
@@ -849,7 +885,9 @@ esp_err_t HandlePortalConfigure(httpd_req_t* request)
 
     cJSON* root = cJSON_CreateObject();
     cJSON_AddBoolToObject(root, "success", true);
-    const std::string message = "Connecting to " + ssid;
+    const std::string message =
+        "Connecting to " + ssid +
+        ". Wi-Fi is restarting; wait ~30-60 s and reload this page if it stops responding.";
     cJSON_AddStringToObject(root, "message", message.c_str());
     cJSON_AddStringToObject(root, "ssid", ssid.c_str());
     return SendJsonResponse(request, 200, root);
@@ -1036,6 +1074,10 @@ void InitializeStack()
 
 bool QueueTransition(TransitionRequest request)
 {
+    // A direct request supersedes any still-pending deferred one.
+    if (s_deferred_transition_timer != nullptr) {
+        (void)esp_timer_stop(s_deferred_transition_timer);
+    }
     if (s_transition_queue == nullptr) {
         return false;
     }
@@ -1043,6 +1085,39 @@ bool QueueTransition(TransitionRequest request)
         ESP_LOGW(kTag, "Wi-Fi transition queue full");
         return false;
     }
+    return true;
+}
+
+void OnDeferredTransitionTimer(void*)
+{
+    TransitionRequest request = TransitionRequest::kStartStation;
+    {
+        std::lock_guard<std::mutex> lock(s_state_mutex);
+        request = s_deferred_transition_request;
+    }
+    (void)QueueTransition(request);
+}
+
+// Queues a transition to fire after `delay_ms`. Used where the caller must finish
+// writing an HTTP response before the transition tears the radio down.
+bool QueueTransitionAfterMs(TransitionRequest request, uint32_t delay_ms)
+{
+    if (s_deferred_transition_timer == nullptr) {
+        return QueueTransition(request);
+    }
+    {
+        std::lock_guard<std::mutex> lock(s_state_mutex);
+        s_deferred_transition_request = request;
+    }
+    // Restart the window so the newest request wins over an earlier pending one.
+    (void)esp_timer_stop(s_deferred_transition_timer);
+    const esp_err_t err =
+        esp_timer_start_once(s_deferred_transition_timer, static_cast<uint64_t>(delay_ms) * 1000ULL);
+    if (err != ESP_OK) {
+        ESP_LOGW(kTag, "Deferred Wi-Fi transition scheduling failed: %s", esp_err_to_name(err));
+        return QueueTransition(request);
+    }
+    ESP_LOGI(kTag, "Wi-Fi transition deferred %u ms", static_cast<unsigned>(delay_ms));
     return true;
 }
 
@@ -1151,7 +1226,7 @@ void EnterAccessPointModeNow()
     }
 
     wifi_config_t config = {};
-    ConfigureAccessPointConfig(ap_ssid, &config);
+    ConfigureAccessPointConfig(ap_ssid, 0, &config);
 
     esp_err_t err = esp_wifi_stop();
     if (err != ESP_OK && err != ESP_ERR_WIFI_NOT_INIT && err != ESP_ERR_WIFI_NOT_STARTED) {
@@ -1221,7 +1296,7 @@ void StartStationAttempt(bool allow_ap_fallback)
         ESP_ERROR_CHECK(esp_wifi_set_mode(access_point_mode ? WIFI_MODE_AP : WIFI_MODE_STA));
         if (access_point_mode) {
             wifi_config_t ap_config = {};
-            ConfigureAccessPointConfig(ap_ssid, &ap_config);
+            ConfigureAccessPointConfig(ap_ssid, 0, &ap_config);
             ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
         }
         LogInternalHeap("Before Wi-Fi start");
@@ -1264,7 +1339,9 @@ void StartStationAttempt(bool allow_ap_fallback)
     ConfigureStationConfig(credentials, &station_config);
     wifi_config_t ap_config = {};
     if (access_point_mode) {
-        ConfigureAccessPointConfig(ap_ssid, &ap_config);
+        // Park the AP on the router's channel so phones already on the portal AP do not
+        // get dropped by a channel hop when the station association lands.
+        ConfigureAccessPointConfig(ap_ssid, ScannedChannelForSsid(credentials.ssid), &ap_config);
     }
 
     esp_err_t err = esp_wifi_stop();
@@ -1389,7 +1466,7 @@ void StartNetworkScanNow()
         }
         if (desired_mode == WIFI_MODE_APSTA) {
             wifi_config_t ap_config = {};
-            ConfigureAccessPointConfig(state.ap_ssid, &ap_config);
+            ConfigureAccessPointConfig(state.ap_ssid, ScannedChannelForSsid(state.ssid), &ap_config);
             err = esp_wifi_set_config(WIFI_IF_AP, &ap_config);
             if (err != ESP_OK) {
                 ResolveInFlightScan(err);
@@ -1556,6 +1633,7 @@ void HandleScanDoneEvent(void* event_data)
             .ssid = std::string(reinterpret_cast<const char*>(record.ssid)),
             .rssi = record.rssi,
             .auth_mode = record.authmode,
+            .primary = record.primary,
         });
     }
 
@@ -1708,6 +1786,16 @@ esp_err_t Init()
     };
     ESP_ERROR_CHECK(esp_timer_create(&scan_timer_args, &s_scan_timeout_timer));
 
+    esp_timer_create_args_t deferred_transition_timer_args = {
+        .callback = OnDeferredTransitionTimer,
+        .arg = nullptr,
+        .dispatch_method = ESP_TIMER_TASK,
+        .name = "wifi_deferred_transition",
+        .skip_unhandled_events = true,
+    };
+    ESP_ERROR_CHECK(
+        esp_timer_create(&deferred_transition_timer_args, &s_deferred_transition_timer));
+
     s_transition_queue = xQueueCreate(kTransitionQueueDepth, sizeof(TransitionRequest));
     if (s_transition_queue == nullptr) {
         return ESP_ERR_NO_MEM;
@@ -1801,7 +1889,8 @@ void EnterAccessPointMode()
     SetAccessPointEnabled(true);
 }
 
-bool ConnectToNetwork(const std::string& ssid, const std::string& password, bool save_on_success)
+bool ConnectToNetwork(const std::string& ssid, const std::string& password, bool save_on_success,
+                      uint32_t start_delay_ms)
 {
     if (ssid.empty() || ssid.size() >= 65 || password.size() >= 65) {
         return false;
@@ -1817,7 +1906,11 @@ bool ConnectToNetwork(const std::string& ssid, const std::string& password, bool
         s_reconnect_suspended = false;
     }
 
-    return QueueTransition(TransitionRequest::kStartStation);
+    // The captive portal passes a delay so its HTTP response reaches the phone before
+    // the transition's esp_wifi_stop() drops the AP it is riding on.
+    return start_delay_ms > 0 ? QueueTransitionAfterMs(TransitionRequest::kStartStation,
+                                                      start_delay_ms)
+                              : QueueTransition(TransitionRequest::kStartStation);
 }
 
 bool DisconnectFromNetwork(bool clear_saved_credentials)

@@ -1,6 +1,7 @@
 # Notas de traspaso (sesión con Copilot, 2026-09-28)
 
-Contexto para retomar el trabajo en una conversación nueva.
+Contexto para retomar el trabajo en una conversación nueva. Para seguir en otro PC
+(estado, flasheo, SD, pruebas y pendientes) ver [continue-on-another-pc.md](continue-on-another-pc.md).
 
 ## Hardware y repos
 

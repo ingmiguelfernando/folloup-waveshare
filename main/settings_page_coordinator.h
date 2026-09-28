@@ -4,6 +4,7 @@
 #include "epaper_ui/settings_page.h"
 #include "page_navigation/navigation_model.h"
 #include "page_navigation/roving_focus.h"
+#include "shtc3_service.h"
 #include "storage_service.h"
 #include "wifi_service.h"
 
@@ -16,8 +17,10 @@ public:
     bool SetFocusIndex(int index);
     bool IsRoleFocused(page_navigation::NavigationItemRole role) const;
 
-    epaper_ui::SettingsPageState BuildState(const wifi_service::UiState& wifi_state,
-                                            const storage_service::Snapshot& storage_snapshot) const;
+    epaper_ui::SettingsPageState BuildState(
+        const wifi_service::UiState& wifi_state,
+        const storage_service::Snapshot& storage_snapshot,
+        const shtc3_service::Reading& climate_reading) const;
 
     const page_navigation::NavigationModel& navigation_model() const { return navigation_model_; }
     const page_navigation::RovingFocus& focus() const { return focus_; }

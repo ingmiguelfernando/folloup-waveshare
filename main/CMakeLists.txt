@@ -19,7 +19,8 @@ idf_component_register(SRCS "onboarding_page_runtime.cpp" "onboarding_page_inter
                                 esp_hw_support esp_partition gemini_service imu_service power_service
                                 nvs_flash ota_service page_navigation playback_service project_assets
                                 recording_archive_service
-                                recording_service recording_session_service storage_service
+                                recording_service recording_session_service shtc3_service
+                                storage_service
                                 summary_service task_config timezone_service
                                 transcription_service wifi_service)
 

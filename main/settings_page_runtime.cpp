@@ -8,6 +8,7 @@
 #include "page_navigation/page_focus_projection.h"
 #include "settings_page_interactions.h"
 #include "settings_page_coordinator.h"
+#include "shtc3_service.h"
 #include "storage_service.h"
 #include "ui_refresh_runtime.h"
 #include "wifi_service.h"
@@ -102,7 +103,11 @@ bool FooterProjectionChangedForFocusIndexes(int old_focus_index, int new_focus_i
 
 epaper_ui::SettingsPageState BuildStateLocked()
 {
-    return s_coordinator.BuildState(wifi_service::GetUiState(), storage_service::GetSnapshot());
+    // Cache-only read: the UI path must never block on sensor I2C.
+    shtc3_service::Reading climate_reading = {};
+    (void)shtc3_service::ReadReading(&climate_reading);
+    return s_coordinator.BuildState(wifi_service::GetUiState(), storage_service::GetSnapshot(),
+                                    climate_reading);
 }
 
 }  // namespace

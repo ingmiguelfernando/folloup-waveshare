@@ -5,6 +5,7 @@
 #include <string_view>
 
 #include "epaper_ui/button.h"
+#include "epaper_ui/climate_status.h"
 #include "epaper_ui/global_footer.h"
 #include "epaper_ui/menu_toggle.h"
 #include "epaper_ui/sd_status.h"
@@ -27,6 +28,7 @@ struct SettingsPageState {
     MenuToggleState wifi_toggle = {};
     MenuToggleState access_point_toggle = {};
     SdStatusState storage_status = {};
+    ClimateStatusState climate_status = {};
     ButtonState enable_otg_button = {};
     ButtonState format_sd_button = {};
     ButtonState manual_onboarding_button = {};

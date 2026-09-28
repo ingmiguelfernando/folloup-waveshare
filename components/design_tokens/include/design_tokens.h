@@ -286,6 +286,13 @@ inline constexpr int kGap = spacing::k4;
 
 }  // namespace sd_status
 
+namespace climate_status {
+
+inline constexpr int kMaxWidth = 220;
+inline constexpr int kValueGap = spacing::k8;
+
+}  // namespace climate_status
+
 namespace button {
 
 inline constexpr int kHeight = 56;

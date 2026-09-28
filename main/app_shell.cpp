@@ -35,6 +35,7 @@
 #include "recording_service.h"
 #include "sdkconfig.h"
 #include "settings_page_runtime.h"
+#include "shtc3_service.h"
 #include "details_page_runtime.h"
 #include "follow_up_page_runtime.h"
 #include "notes_page_runtime.h"
@@ -1755,6 +1756,16 @@ void InitImuService()
     imu_service::LogDebugStatus();
 }
 
+void InitShtc3Service()
+{
+    const esp_err_t err = shtc3_service::Init();
+    if (err != ESP_OK) {
+        ESP_LOGW(kTag, "SHTC3 service init failed: %s", esp_err_to_name(err));
+        return;
+    }
+    shtc3_service::LogDebugStatus();
+}
+
 void InitDeviceSleepRuntime()
 {
     device_sleep_runtime::SetShutdownPendingProvider(IsShutdownPending, nullptr);
@@ -1802,6 +1813,7 @@ void Run()
     });
     PlayFeedback(feedback_service::FeedbackEvent::kStartup);
     InitImuService();
+    InitShtc3Service();
     InitDeviceSleepRuntime();
     InitTimezoneService();
     InitRecordingArchiveService();

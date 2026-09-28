@@ -62,7 +62,8 @@ bool SettingsPageCoordinator::IsRoleFocused(page_navigation::NavigationItemRole 
 
 epaper_ui::SettingsPageState SettingsPageCoordinator::BuildState(
     const wifi_service::UiState& wifi_state,
-    const storage_service::Snapshot& storage_snapshot) const
+    const storage_service::Snapshot& storage_snapshot,
+    const shtc3_service::Reading& climate_reading) const
 {
     storage_service::StorageStats storage_stats = {};
     const bool allow_live_storage_stats =
@@ -92,6 +93,18 @@ epaper_ui::SettingsPageState SettingsPageCoordinator::BuildState(
     if (state.storage_status.has_sd_card) {
         state.storage_status.free_space_text = FormatStorageBytes(storage_stats.free_bytes);
         state.storage_status.used_percent = storage_stats.used_percent;
+    }
+
+    state.climate_status.available = climate_reading.valid;
+    if (climate_reading.valid) {
+        char temperature[16] = {};
+        std::snprintf(temperature, sizeof(temperature), "%.1f \xC2\xB0" "C",
+                      static_cast<double>(climate_reading.temperature_c));
+        char humidity[16] = {};
+        std::snprintf(humidity, sizeof(humidity), "%.0f %% RH",
+                      static_cast<double>(climate_reading.humidity_rh));
+        state.climate_status.temperature_text = temperature;
+        state.climate_status.humidity_text = humidity;
     }
 
     // Label tracks the mode so the button reads correctly if the page is revisited while

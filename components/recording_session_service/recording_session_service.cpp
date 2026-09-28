@@ -679,11 +679,12 @@ bool SubmitTagSelection(int selected_index)
              save_result.metadata_path.empty() ? "<none>" : save_result.metadata_path.c_str(),
              save_result.error_code.empty() ? "<none>" : save_result.error_code.c_str());
 
-    const bool should_transcribe = save_result.clip_saved && gemini_service::GetSnapshot().runtime.ready;
+    const bool gemini_ready = gemini_service::GetSnapshot().runtime.ready;
+    const bool should_transcribe = save_result.clip_saved && gemini_ready;
     ESP_LOGI(kTag,
              "Transcription decision: clip_saved=%d gemini_ready=%d should_transcribe=%d",
              save_result.clip_saved ? 1 : 0,
-             gemini_service::GetSnapshot().runtime.ready ? 1 : 0,
+             gemini_ready ? 1 : 0,
              should_transcribe ? 1 : 0);
 
     {
@@ -729,6 +730,9 @@ bool SubmitTagSelection(int selected_index)
         if (save_result.clip_saved && !save_result.error_code.empty()) {
             // Keep the saved result but surface the archive warning.
             s_snapshot.last_error_message = save_result.error_message;
+        } else if (save_result.clip_saved && !gemini_ready) {
+            s_snapshot.last_error_code = "gemini_not_ready";
+            s_snapshot.last_error_message = "Gemini API key not validated; transcription skipped";
         } else if (save_result.clip_saved) {
             s_snapshot.last_error_code.clear();
             s_snapshot.last_error_message.clear();

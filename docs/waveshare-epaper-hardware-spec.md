@@ -9,26 +9,31 @@
 > <https://docs.waveshare.com/ESP32-S3-ePaper-3.97>. Where the vendor wiki and
 > the firmware disagree, the firmware is authoritative for what the running code
 > actually drives — see [Software Porting Notes](#9-software-porting-notes).
+>
+> Parts of this document were inherited from the upstream `followup` repo. It was
+> re-checked against this branch's code and the vendor wiki on 2026-09-28.
 
 ## 1. System Overview
 
 | Item | Specification |
 |---|---|
 | Board id | `esp-epaper` (Waveshare ESP32-S3-ePaper-3.97) |
-| Main controller | ESP32-S3-WROOM-1-N16R8 (`esp32s3` target) |
+| Main controller | ESP32-S3-WROOM-1-N16R8 module (ESP32-S3R8 die, `esp32s3` target) |
 | Flash / PSRAM | 16 MB flash / 8 MB octal PSRAM |
+| Internal SRAM | 512 KB, shared between IRAM and DRAM (see [Memory Budget](#91-memory-budget)) |
 | Wireless | 2.4 GHz Wi-Fi (802.11 b/g/n) + Bluetooth 5 LE |
 | Display | Waveshare 3.97" e-paper panel, `SSD1677` controller, `800x480` |
 | Display bus | SPI (`SPI3_HOST`), e-paper control signals |
 | Audio codec | ES8311 over I2S + shared I2C |
 | Audio amplifier | NS4150B (enabled via `GPIO39`) |
-| Board PCM format | `24 kHz`, mono, 16-bit |
+| Board PCM format | `16 kHz`, mono, 16-bit, full-duplex |
 | Storage expansion | MicroSD via `SDMMC 4-bit` mode |
 | Power management | AXP2101 PMIC (wiki labels it `TG28`) |
 | RTC | PCF85063 |
 | IMU | QMI8658 (6-axis) |
-| Temp/humidity | SHTC3 (present on board; not driven by current firmware) |
-| USB | Native `USB-OTG` over the board USB-C connector |
+| Temp/humidity | SHTC3 (present on board; not driven by current firmware — see [SHTC3 Integration Notes](#92-shtc3-integration-notes)) |
+| Physical controls | 3-way rotary/rocker switch (up / press / down), side `BOOT` key, side `PWR` key. No RESET key is listed by the vendor |
+| USB | Native `USB-OTG` over the board USB-C connector (the only USB path; no separate USB-UART bridge) |
 | Shared control bus | I2C on `GPIO41` (SDA) / `GPIO42` (SCL) |
 
 ## 2. Key IC Part Numbers
@@ -43,11 +48,13 @@
 | RTC | PCF85063 | `0x51` | Real-time clock; interrupt on `GPIO45` |
 | 6-axis IMU | QMI8658 | `0x6B` / `0x6A` | Default `0x6B`, alternate `0x6A` (auto-tried); INT2 on `GPIO40` |
 | Temp/humidity sensor | SHTC3 | `0x70` | On shared I2C bus; no driver in current firmware |
-| MicroSD | — | — | `SDMMC 4-bit` mode socket |
+| MicroSD | — | — | `SDMMC 4-bit` mode socket, FAT32 |
 
 ## 3. I2C Peripheral Addresses
 
-All I2C peripherals share the same master bus (`GPIO41` SDA / `GPIO42` SCL).
+All I2C peripherals share the same master bus (`GPIO41` SDA / `GPIO42` SCL),
+`I2C_NUM_1` at 400 kHz with internal pull-ups enabled. Get the bus handle with
+`waveshare_board::EnsureSensorI2cBus()`.
 
 | Peripheral | Part Number | Address | Notes |
 |---|---|---|---|
@@ -102,6 +109,10 @@ All I2C peripherals share the same master bus (`GPIO41` SDA / `GPIO42` SCL).
 | `NAV_BUTTON_FUNCTION` | GPIO5 | Input | Navigation function / middle key |
 | `NAV_BUTTON_DOWN` | GPIO6 | Input | Navigation down |
 
+GPIO4/5/6 are the three directions of the single rotary/rocker switch (the code
+calls GPIO5 `FUNCTION`/`FN`). All are active-low. `PWR` is not a GPIO: it is the
+AXP2101 power key, reported through `PMIC_IRQ` (`GPIO38`).
+
 ### 4.5 MicroSD (SDMMC 4-bit)
 
 | Signal | GPIO | Direction (from controller perspective) | Purpose |
@@ -116,8 +127,8 @@ All I2C peripherals share the same master bus (`GPIO41` SDA / `GPIO42` SCL).
 ## 5. Power and Charging (AXP2101)
 
 The AXP2101 PMIC owns system power, battery charging, and USB VBUS state. The
-firmware profile is configured in the `Pmic` constructor in
-[`components/board_epaper/epaper_board.cc`](/Users/tieuvong/Development/followup/components/board_epaper/epaper_board.cc).
+firmware profile is configured in `ConfigurePmicRails()` in
+[`components/board/waveshare_board.cpp`](../components/board/waveshare_board.cpp).
 
 ### 5.1 Power Rails
 
@@ -149,26 +160,27 @@ These are the PMIC outputs the firmware enables at bring-up:
 | Termination current | `25 mA` |
 | Thermal threshold | `80 °C` |
 | System power-down voltage | `2800 mV` |
-| Low-battery warn threshold | `10 %` |
-| Low-battery shutdown threshold | `5 %` |
+| Low-battery warn threshold | `10 %` (`kLowBatteryPercentThreshold` in `power_service`) |
+| Low-battery shutdown threshold | Not implemented in current firmware; the PMIC cuts power at `2800 mV` |
 
 ### 5.3 Shutdown Model
 
 Shutdown model (hybrid):
 
-- power on from the PMIC hardware key path
-- firmware-confirmed shutdown before PMIC power-off for the normal in-app flow
+- power on: hold `PWR` ~1 s from off
+- short `PWR` press: lock/unlock screen (firmware IRQ)
+- `PWR` held >= 1 s: firmware shutdown confirmation, then PMIC power-off
 - PMIC-enforced `6s` power-key long-press shutdown as a forced fallback
 
-The PMIC interrupt line (`GPIO38`) also exposes USB cable insert/remove state,
-used for OTG/storage-mode cable detection and automatic exit back to app-owned
-SD-card mode.
+Only the power-key IRQs are enabled on `GPIO38`. VBUS insert/remove IRQs are
+deliberately disabled because `GPIO38` is a light-sleep wake source. USB cable
+presence is polled with `Axp2101::isVbusIn()` (`power_service`, `storage_service`).
 
 ## 6. Sleep and Wake-Up
 
 The firmware uses **light sleep** (not deep sleep) for inactivity, driven by the
 device sleep service. The wake path is implemented in
-[`main/service_runtime/device_sleep_runtime.cc`](/Users/tieuvong/Development/followup/main/service_runtime/device_sleep_runtime.cc).
+[`main/device_sleep_runtime.cpp`](../main/device_sleep_runtime.cpp).
 
 Entry sequence before `esp_light_sleep_start()`:
 
@@ -219,32 +231,82 @@ signals on this board and must keep a Boot-safe default level at reset:
   behind a storage modal
 - short power-key press, BOOT key activation, or USB cable removal requests exit
   back to app-mounted SD-card mode
+- cable detection is VBUS only: a wall charger looks like a cable but has no USB
+  host, so test OTG connected directly to a computer
+- OTG and the USB Serial/JTAG log console share the same USB PHY; logs stop once
+  TinyUSB takes over the port
+- the OTG SD init must match the app mount (slot 1, 20 MHz, 4-bit, internal
+  pull-ups) — see `components/storage_service/usb_storage_backend.cpp`
 
 ## 9. Software Porting Notes
 
 | Item | Notes |
 |---|---|
-| Source of truth | Pin values come from `epaper_board_config.h`; do not treat `docs/hardware-reference.md` audio pins as current — that file lists an older I2S mapping (`WS`/`DOUT`/`DIN` on GP15/GP16/GP21). The config header uses `WS=GPIO47`, `DOUT=GPIO48`, `DIN=GPIO21`, `MCLK=GPIO13`, `BCLK=GPIO14`. |
+| Source of truth | Pin values come from `components/board/include/waveshare_board_config.h` (`WAVESHARE_*` macros). I2S: `WS=GPIO47`, `DOUT=GPIO48`, `DIN=GPIO21`, `MCLK=GPIO13`, `BCLK=GPIO14`. |
 | Shared I2C bus | Codec, PMIC, RTC, and IMU share one master bus on `GPIO41`/`GPIO42`. |
 | IMU address | QMI8658 auto-detects: try `0x6B` first, fall back to `0x6A`. |
 | Strapping pins | `GPIO0/3/45/46` are strapping pins reused as functional signals — see [Strapping Pins](#7-strapping-pins). |
 | SD mode | `SDMMC 4-bit` (not SPI); all four data lines connected (`D0`–`D3`). |
-| Audio sample rate | Codec runs at `24 kHz` mono/16-bit; Gemini uplink path downsamples mic audio to `16 kHz` in software. |
+| Audio sample rate | Codec runs full-duplex at `16 kHz` mono/16-bit (`WAVESHARE_AUDIO_SAMPLE_RATE_HZ`), matching the recording/Gemini pipeline with no resampling. |
 | PMIC naming | The Waveshare wiki lists the PMIC as `TG28`; the firmware driver targets an AXP2101-compatible PMIC at I2C `0x34` and that is what actually works. Treat `0x34` / AXP2101 as authoritative. |
-| SHTC3 sensor | Present on the board (shared I2C, `0x70`) but the current firmware ships no SHTC3 driver — add one before relying on temp/humidity. |
+| SHTC3 sensor | Present on the board (shared I2C, `0x70`) but the current firmware ships no SHTC3 driver — see [SHTC3 Integration Notes](#92-shtc3-integration-notes). |
 | Connectors | Battery, speaker, and RTC-backup-battery use MX1.25 headers (per vendor wiki); USB-C is used for flashing/logging and native USB-OTG. |
+
+### 9.1 Memory Budget
+
+- Internal SRAM is 512 KB total and IRAM comes out of the same pool, so every
+  `*_IRAM_OPT` option shrinks the heap.
+- The two SSD1677 framebuffers (48 000 B each) are allocated in internal RAM on
+  purpose (PSRAM reads race cache-disable windows and cause banding).
+- Wi-Fi SoftAP beacon/RX buffers need internal DMA RAM; PSRAM does not help
+  there. A beacon alloc failure (`wifi:alloc eb len=752 type=4 fail`) is followed
+  by a `LoadProhibited` panic inside the Wi-Fi driver.
+- `sdkconfig.defaults` alone boot-loops with `ESP_ERR_NO_MEM`; builds use
+  `sdkconfig.waveshare`.
+- `wifi_service` logs `internal DMA free/largest/min` before `esp_wifi_start()`.
+
+### 9.2 SHTC3 Integration Notes
+
+Facts below are from the Sensirion SHTC3 datasheet; verify against the
+datasheet in the vendor Resources page before relying on them.
+
+| Item | Value |
+|---|---|
+| Address | `0x70` (7-bit), shared bus `I2C_NUM_1`, max 1 MHz (bus runs 400 kHz) |
+| Commands (16-bit, MSB first) | Wakeup `0x3517`, Sleep `0xB098`, Soft reset `0x805D`, Read ID `0xEFC8` |
+| Measure, normal mode, no clock stretching | T first `0x7866`, RH first `0x58E0` (max ~12.1 ms) |
+| Measure, low-power mode, no clock stretching | T first `0x609C`, RH first `0x401A` (max ~0.8 ms) |
+| Response | 6 bytes: T MSB, T LSB, CRC, RH MSB, RH LSB, CRC |
+| CRC-8 | poly `0x31`, init `0xFF`, no reflection, no final XOR |
+| Conversion | `T[°C] = -45 + 175 * raw / 65536`, `RH[%] = 100 * raw / 65536` |
+| Power | Must send Wakeup (~240 µs) before each command after Sleep; put back to Sleep after reading |
+
+Porting guidance for this repo:
+
+- Driver: new component deriving from `I2cDevice` (`components/i2c_device`),
+  like `components/qmi8658`. `I2cDevice` is
+  register-oriented; SHTC3 uses 16-bit commands, so use `WriteBytes`/`ReadBytes`.
+- Service: a small service that polls at a low rate (e.g. every 30–60 s) and
+  caches the last reading; UI pages read the cache. Keep it out of
+  `main/app_shell.cpp` (see `AGENTS.md`).
+- Stop polling across light sleep, like the RTC timer poll.
+- The sensor sits next to the ESP32-S3 and the charger, so readings run warm
+  while Wi-Fi is active or the battery is charging; consider an offset or read
+  only after idle periods.
 
 ## 10. Build And Flash
 
+This fork builds in GitHub Actions (`.github/workflows/build.yml`): it copies
+`sdkconfig.waveshare` to `sdkconfig`, runs `idf.py build` on ESP-IDF v5.5.4, and
+uploads `followup-waveshare.bin` (merged, flash at `0x0`) plus the `.elf` for
+backtrace decoding. Flash from the browser with esptool-js.
+
+Local build (if ESP-IDF is installed):
+
 ```bash
 source $IDF_PATH/export.sh
-idf.py set-target esp32s3
+# sdkconfig.waveshare already targets esp32s3; `idf.py set-target` would regenerate sdkconfig.
+cp sdkconfig.waveshare sdkconfig
 idf.py build
 idf.py flash monitor
-```
-
-Release helper:
-
-```bash
-python3 scripts/release.py esp-epaper
 ```

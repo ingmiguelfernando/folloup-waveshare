@@ -300,13 +300,15 @@ void ConfigureStationConfig(const Credentials& credentials, wifi_config_t* confi
     *config = {};
     strlcpy(reinterpret_cast<char*>(config->sta.ssid), credentials.ssid.c_str(),
             sizeof(config->sta.ssid));
-    strlcpy(reinterpret_cast<char*>(config->sta.password), credentials.password.c_str(),
-            sizeof(config->sta.password));
+    // A 64-char password is a raw hex PSK and fills the field with no NUL; strlcpy would drop a char.
+    memcpy(config->sta.password, credentials.password.data(),
+           std::min(credentials.password.size(), sizeof(config->sta.password)));
     config->sta.scan_method = WIFI_ALL_CHANNEL_SCAN;
     config->sta.sort_method = WIFI_CONNECT_AP_BY_SIGNAL;
     config->sta.failure_retry_cnt = 0;
     config->sta.pmf_cfg.capable = true;
     config->sta.pmf_cfg.required = false;
+    config->sta.sae_pwe_h2e = WPA3_SAE_PWE_BOTH;
 }
 
 bool LoadString(nvs_handle_t handle, const char* key, std::string* out)
@@ -1547,6 +1549,9 @@ void HandleScanDoneEvent(void* event_data)
         if (record.ssid[0] == '\0') {
             continue;
         }
+        ESP_LOGI(kTag, "Scan: ssid=%s ch=%u rssi=%d auth=%d pairwise=%d group=%d",
+                 reinterpret_cast<const char*>(record.ssid), record.primary, record.rssi,
+                 record.authmode, record.pairwise_cipher, record.group_cipher);
         networks.push_back({
             .ssid = std::string(reinterpret_cast<const char*>(record.ssid)),
             .rssi = record.rssi,
@@ -1619,7 +1624,8 @@ void HandleWifiEvent(int32_t event_id, void* event_data)
                          reconnect_ssid.empty() ? "<unknown>" : reconnect_ssid.c_str());
             } else if (should_reconnect) {
                 ESP_LOGI(kTag,
-                         "Wi-Fi disconnected; scheduling reconnect %d/%d to ssid=%s",
+                         "Wi-Fi disconnected (reason=%d); scheduling reconnect %d/%d to ssid=%s",
+                         event != nullptr ? event->reason : -1,
                          attempt, kMaxReconnectAttempts,
                          reconnect_ssid.empty() ? "<unknown>" : reconnect_ssid.c_str());
                 if (!QueueTransition(TransitionRequest::kStartStation)) {

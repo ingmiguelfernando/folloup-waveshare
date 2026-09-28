@@ -914,6 +914,8 @@ void HandleRecordingSessionEvent(const recording_session_service::Event& event, 
             epaper_ui::ToastState toast = {};
             if (event.snapshot.transcript_saved) {
                 toast = BuildToast("Transcript saved to SD", EmbeddedIconId::kFileTranscript);
+            } else if (event.snapshot.last_error_code == "gemini_not_ready") {
+                toast = BuildToast("Saved. Gemini not ready", EmbeddedIconId::kClose);
             } else if (!event.snapshot.last_error_code.empty()) {
                 // Transcription was attempted but failed. Surface it as a failure (the recording
                 // itself is still on SD) with a specific message for a quota/rate-limit error.

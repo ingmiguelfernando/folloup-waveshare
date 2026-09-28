@@ -103,8 +103,17 @@ onboarding, and a set of feature pages plus overlays) built on:
   PSRAM buffer) and persists the reading position in NVS. The full-screen
   reader is `main/bible_page_{coordinator,runtime}` + `epaper_ui/bible_page`
   (UP/DOWN turn pages, OK opens the reader menu, no global footer).
-The board carries an SHTC3 temperature/humidity sensor on the shared sensor I2C
-bus. It is not driven by any component today.
+- A `book_service` component that reads plain-text books (`.txt`) from
+  `/sdcard/books/` into a PSRAM buffer (2 MB cap), transcoding CP1252/Latin-1 to
+  UTF-8 when needed, and persists the last reading position in NVS. The reader
+  reuses the same full-screen render (`epaper_ui/reader_page.h` aliases over
+  `epaper_ui/bible_page.*`) via `main/book_page_{coordinator,runtime}`; the
+  dashboard's "Read" entry opens `main/reading_picker_runtime` to choose between
+  the Bible and a book.
+- `shtc3` (driver) and `shtc3_service` read the board's SHTC3
+  temperature/humidity sensor on the shared sensor I2C bus. The service polls
+  every 30 s into a cached reading (UI never blocks on sensor I2C) and the
+  Settings page shows an "Environment" row fed from that cache.
 
 This board has no touch controller — input is entirely buttons. Some widget code
 still carries `kTouch*` hit-slop constants and a `kTouchContact` feedback cue
@@ -817,6 +826,7 @@ Runtime-persisted settings live in service-owned NVS namespaces:
 The build-time Wi-Fi/time defaults live under `Folloup Settings`:
 
 - `CONFIG_FOLLOWUP_WIFI_AP_PREFIX`
+- `CONFIG_FOLLOWUP_WIFI_AP_PASSWORD`
 - `CONFIG_FOLLOWUP_WIFI_STA_SSID`
 - `CONFIG_FOLLOWUP_WIFI_STA_PASSWORD`
 - `CONFIG_FOLLOWUP_WIFI_START_IN_AP_MODE`
@@ -825,10 +835,14 @@ The build-time Wi-Fi/time defaults live under `Folloup Settings`:
 
 Saved NVS Wi-Fi credentials take precedence over built-in sdkconfig
 credentials. If neither exists, or if `CONFIG_FOLLOWUP_WIFI_START_IN_AP_MODE`
-is enabled, `wifi_service` enters open AP setup mode and serves backend routes
-at the SoftAP URL, normally `http://192.168.4.1`. The current backend
-intentionally exposes JSON/form endpoints only; it does not embed the old
-portal UI and does not add DNS captive-portal redirection.
+is enabled, `wifi_service` enters WPA2 AP setup mode (passphrase from
+`CONFIG_FOLLOWUP_WIFI_AP_PASSWORD`) and serves the embedded portal plus the
+backend routes at the SoftAP URL, normally `http://192.168.4.1`, with captive
+DNS redirection (every A query answers 192.168.4.1). The portal frontend is the
+Vite app in `webserver/`; `npm run build` there regenerates
+`components/wifi_service/portal/`, which is embedded via `EMBED_FILES`. Saving
+credentials from `/api/configure` answers the HTTP response first and defers the
+radio restart by 2 s so the phone sees the confirmation.
 
 Current Wi-Fi backend routes:
 
@@ -942,7 +956,7 @@ and are composed here.
   D0 `GPIO_NUM_15`, D1 `GPIO_NUM_7`, D2 `GPIO_NUM_8`, D3 `GPIO_NUM_18`
 - shared sensor I2C: SDA `GPIO_NUM_41`, SCL `GPIO_NUM_42` — carries the AXP2101
   PMIC (`0x34`), the QMI8658 IMU, the PCF85063 RTC, the ES8311 codec control
-  interface, and an SHTC3 that nothing drives
+  interface, and the SHTC3 (`0x70`, driven by `shtc3_service`)
 - PMIC interrupt: `GPIO_NUM_38`
 - ES8311 audio over I2S0: MCLK `GPIO_NUM_13`, BCLK `GPIO_NUM_14`, WS
   `GPIO_NUM_47`, DIN `GPIO_NUM_21`, DOUT `GPIO_NUM_48`
@@ -1439,7 +1453,7 @@ interrupt line to coordinate.
   - PCF85063 RTC at `0x51`
   - QMI8658 IMU
   - ES8311 codec control interface
-  - SHTC3 temperature/humidity, present but not driven by any component
+  - SHTC3 temperature/humidity, driven by `shtc3`/`shtc3_service` (Settings row)
 - Neither I2C pin is a strapping pin, so the bus can be created during early
   startup without affecting boot mode.
 - Buttons are all active-low to GND: `ACTION`/BOOT on `GPIO0`, rocker up on

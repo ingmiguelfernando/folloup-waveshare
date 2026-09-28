@@ -17,6 +17,9 @@ PC personal. Todo el código ya está en GitHub; este PC no hace falta.
 | `8f769b3` | `scripts/bible_json_to_sd.py` (convierte la Biblia JSON al formato de la SD) | Solo en PC |
 | `c1265af` | Fuentes con acentos (Latin-1) y lectura de UTF-8 | Solo prueba en PC |
 | `b5e06de` | Página "Bible" en el menú principal | Solo prueba en PC |
+| `d1c8432` | Portal Wi-Fi: responde antes de reiniciar, canal del router, timeouts y AP WPA2 | No |
+| `701d2aa` | Sensor SHTC3: driver, servicio y fila "Environment" en Ajustes | No |
+| `a7e1062` | Lector de libros `.txt` con entrada unificada "Read" | No |
 
 Los tres últimos commits **nunca se han compilado para el ESP32**. Si la build de
 Actions falla, mira la sección 8.
@@ -78,7 +81,10 @@ de RAM interna queda.
    alguno en las fuentes.
 3. Copia la carpeta `sd/bible` a la **raíz** de la microSD. Debe quedar
    `bible/rvr1960/index.tsv`, `GEN.txt`, `GEN.idx`, etc.
-4. Inserta la SD en la placa y reinicia.
+4. (Opcional) Crea una carpeta `books/` en la **raíz** y copia ahí tus libros en
+   `.txt` (UTF-8 o Latin-1/Windows-1252, hasta 2 MB por fichero). Aparecerán en
+   el menú principal → **Read**.
+5. Inserta la SD en la placa y reinicia.
 
 ## 6. Probar la Biblia
 
@@ -154,40 +160,52 @@ Datos clave que conviene recordar (también están en los docs):
 - `main/app_shell.cpp` es solo orquestación; la lógica va en servicios o runtimes.
 - El texto bíblico nunca se sube al repo.
 
-## 10. Siguientes pasos (pendientes)
+## 10. Siguientes pasos
 
-1. **Validar en la placa**: Biblia, fuentes con acentos, OTA y OTG (con la placa
-   conectada directo a un computador).
+Hechos el 2026-09-28 (commits `d1c8432`, `701d2aa`, `a7e1062`):
+
+- **Portal Wi-Fi** (`d1c8432`): responde antes de reiniciar el Wi-Fi (adiós al
+  "Conectando" eterno), el AP arranca en el canal del router, `fetch` con timeout
+  de 10 s, y el AP ahora es **WPA2** con contraseña (por defecto `followupsetup`;
+  se cambia en `CONFIG_FOLLOWUP_WIFI_AP_PASSWORD`).
+- **Sensor SHTC3** (`701d2aa`): driver + servicio (sondeo cada 30 s, lectura
+  cacheada) y fila **"Environment"** en Ajustes con temperatura y humedad.
+- **Lector de libros `.txt`** (`a7e1062`): el menú principal muestra **"Read"**,
+  que abre un selector entre la Biblia y los libros de `/sdcard/books/*.txt`
+  (páginas, tamaño de texto, posición recordada y "Go to page").
+
+Pendientes:
+
+1. **Validar en la placa**: Biblia, fuentes con acentos, OTA, OTG, portal Wi-Fi
+   (contraseña y fin del "Conectando"), fila del SHTC3 y lector de libros.
 2. **Rediseño de la interfaz** (propuesto):
    - inicio con cuadrícula de iconos: Capturar (grabar / transcribir / resumir),
      Notas, Tareas, Seguimiento, Biblioteca (libros), Biblia, Audios, Fotos,
      Asistente, Ajustes;
-   - navegación: arriba/abajo recorren, OK abre, mantener abajo = atrás en todas
-     las pantallas, mantener BOOT = grabar;
+   - navegación: arriba/abajo recorren, OK abre, mantener abajo = atrás en todas las
+     pantallas, mantener BOOT = grabar;
    - barra inferior con pistas según la pantalla («Back | Select | < | >») en vez
      de la barra de iconos;
    - mantener la pantalla de bloqueo actual (hora, fecha, día).
-3. **Lector de libros**: `.txt` primero (reutilizando la paginación de la Biblia),
-   EPUB después.
-4. **Sensor de temperatura y humedad (SHTC3)**: notas en
-   `docs/waveshare-epaper-hardware-spec.md` §9.2.
-5. **Sincronizar notas, tareas y audio con el iPhone por Wi-Fi**: API local
+3. **Lector de libros, fase 2**: EPUB, posición por libro (hoy solo se recuerda el
+   último abierto) y salto por porcentaje.
+4. **Sincronizar notas, tareas y audio con el iPhone por Wi-Fi**: API local
    autenticada con token, `followup.local` (mDNS) y la app Atajos.
-6. **Portal Wi-Fi**: responder antes de reiniciar el Wi-Fi, arrancar el AP en el
-   canal del router, límites de tiempo en `fetch`, contraseña en el AP.
-7. **Revisar el fork [mach1na/folloup](https://github.com/mach1na/folloup)**, que
+5. **Revisar el fork [mach1na/folloup](https://github.com/mach1na/folloup)**, que
    dice mejorar la RAM y la batería.
-8. **Xiaozhi**: es un firmware completo y pesado; lo realista es como firmware
+6. **Xiaozhi**: es un firmware completo y pesado; lo realista es como firmware
    aparte en otra partición, lo que exige rediseñar particiones junto con OTA.
 
 ## 11. Problemas conocidos y soluciones
 
 | Síntoma | Causa / solución |
 |---|---|
+| El AP `Followup-XXXXXX` pide contraseña | Es WPA2 desde `d1c8432`; contraseña por defecto `followupsetup` (`CONFIG_FOLLOWUP_WIFI_AP_PASSWORD`) |
 | Reinicio en bucle con `ESP_ERR_NO_MEM` | Se compiló sin `sdkconfig.waveshare` |
 | `wifi:alloc eb len=752 ... fail` + `LoadProhibited` | Sin RAM interna para el AP; no activar `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP` |
 | El móvil recibe `169.254.x.x` | DHCP del AP sin memoria; mismo origen |
 | `run -> init (0xf00)` y `RECONNECT_EXHAUSTED` | Contraseña de Wi-Fi incorrecta (motivo 15) |
 | "Saved. Gemini not ready" | API key no validada; busca `Gemini authentication failed` |
 | No hay transcripciones | Falta SD o no se eligió Note/Task/Idea tras grabar |
-| El portal se queda en "Conectando" | Al conectar, el Wi-Fi se reinicia y corta al móvil; recarga la página tras ~60 s |
+| El portal se queda en "Conectando" | Resuelto en `d1c8432` (responde antes de reiniciar). Si aún falla, recarga la página tras ~30-60 s |
+| "Read" no lista tus libros | La carpeta `books/` va en la **raíz** de la SD, ficheros `.txt` de hasta 2 MB (UTF-8 o Latin-1) |

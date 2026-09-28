@@ -32,7 +32,9 @@ Contexto para retomar el trabajo en una conversación nueva. Para seguir en otro
      - `CONFIG_ESP_CONSOLE_SECONDARY_USB_SERIAL_JTAG=y`
    - `sdkconfig.defaults` tiene cambios del usuario, pero en la práctica no influye porque el `sdkconfig` completo tiene prioridad.
 2. **Access point sin DHCP**:
-   - El iPhone y el Mac se asocian a `Followup-XXXXXX` (red abierta, portal en `http://192.168.4.1`), pero reciben `169.254.x.x` y el portal no carga.
+   - El iPhone y el Mac se asocian a `Followup-XXXXXX` (portal en `http://192.168.4.1`;
+     desde `d1c8432` la red es WPA2 con contraseña `followupsetup`), pero reciben
+     `169.254.x.x` y el portal no carga.
    - Hipótesis (sin logs): RAM interna agotada. Los framebuffers ocupan ~96 KB a propósito (`components/epaper_panel/epaper_panel.cpp`), hay más de 20 tareas y los buffers de Wi-Fi están en RAM interna, así que se descartan los paquetes que llegan.
    - Arreglo aplicado: los buffers de Wi-Fi/LWIP y de mbedTLS pasan a PSRAM (commit `eb113b9`).
    - Resultado de `eb113b9` en la placa: al arrancar el AP sale `wifi:alloc eb len=752 type=4 fail` / `m f beacon`, y luego un panic `LoadProhibited` (EXCVADDR 0x2c) en core 0 dentro del driver Wi-Fi, en bucle. La RAM interna DMA no alcanza para el beacon.

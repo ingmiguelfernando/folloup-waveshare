@@ -74,7 +74,7 @@ Followup runs on the [Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com
 | Storage | microSD card (recordings, transcripts, summaries) |
 | AI | Gemini (cloud) transcription and summarization, over Wi-Fi |
 
-The board also carries an SHTC3 temperature/humidity sensor on the shared I2C bus. Followup does not currently read it.
+The board also carries an SHTC3 temperature/humidity sensor on the shared I2C bus. Followup reads it every 30 s and shows the values in the Settings page ("Environment" row).
 
 ## Controls
 

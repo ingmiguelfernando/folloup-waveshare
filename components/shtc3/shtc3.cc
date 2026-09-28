@@ -21,6 +21,11 @@ constexpr uint32_t kWakeupDelayUs = 240;  // datasheet wakeup time
 constexpr uint32_t kSoftResetDelayMs = 1; // datasheet reset time
 constexpr uint32_t kMeasureDelayMs = 15;  // margin over the 12.1 ms worst case
 constexpr int kMeasurementAttempts = 2;
+// power_service polls the AXP2101 on the same bus every 2 s; a transaction that
+// lands mid-cycle comes back ESP_ERR_INVALID_STATE (bus busy), so back off and
+// retry before giving up. One extra beat also clears the shared-bus turnaround.
+constexpr int kBusyRetries = 3;
+constexpr uint32_t kBusyRetryDelayMs = 25;
 
 // Sensirion CRC-8: polynomial 0x31, init 0xFF, no reflection, no final XOR.
 uint8_t Crc8(const uint8_t* data, size_t length)
@@ -150,9 +155,18 @@ esp_err_t Shtc3::ReadMeasurement(float* out_temperature_c, float* out_humidity_r
     uint16_t raw_temperature = 0;
     uint16_t raw_humidity = 0;
     for (int attempt = 0; attempt < kMeasurementAttempts; ++attempt) {
-        err = WakeUp();
-        if (err == ESP_OK) {
-            err = SendCommand(kCommandMeasureNormalTFirst);
+        // Shared-bus contention with the PMIC poll returns ESP_ERR_INVALID_STATE
+        // mid-transaction; back off briefly instead of hammering the bus.
+        err = ESP_ERR_INVALID_STATE;
+        for (int retry = 0; retry <= kBusyRetries; ++retry) {
+            err = WakeUp();
+            if (err == ESP_OK) {
+                err = SendCommand(kCommandMeasureNormalTFirst);
+            }
+            if (err != ESP_ERR_INVALID_STATE) {
+                break;
+            }
+            vTaskDelay(pdMS_TO_TICKS(kBusyRetryDelayMs));
         }
         if (err == ESP_OK) {
             vTaskDelay(pdMS_TO_TICKS(kMeasureDelayMs));
@@ -162,6 +176,7 @@ esp_err_t Shtc3::ReadMeasurement(float* out_temperature_c, float* out_humidity_r
         if (err == ESP_OK) {
             break;
         }
+        vTaskDelay(pdMS_TO_TICKS(kBusyRetryDelayMs));
     }
     if (err != ESP_OK) {
         ESP_LOGW(kTag, "Measurement failed: %s", esp_err_to_name(err));

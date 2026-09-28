@@ -3,7 +3,7 @@ idf_component_register(
          "global_footer.cpp" "layout_grid.cpp" "button.cpp" "button_icon.cpp" "mic_status.cpp"
          "select_item.cpp" "select_list.cpp" "render_utils.cpp" "generated_epaper_fonts.cpp"
          "generated_epaper_font_extensions.cpp"
-         "bitmap_font.cpp" "font_renderer.cpp"
+         "bitmap_font.cpp" "font_renderer.cpp" "bible_page.cpp"
     INCLUDE_DIRS "include"
     REQUIRES design_tokens project_assets
 )

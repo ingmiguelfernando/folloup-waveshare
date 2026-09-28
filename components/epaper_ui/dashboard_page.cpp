@@ -13,10 +13,12 @@ constexpr int kMargin = design::spacing::k16;
 constexpr int kContentTopGap = design::spacing::k32;
 constexpr int kWelcomeMiddleGap = design::spacing::k48;
 constexpr int kMiddleMenuGap = design::spacing::k8;
+constexpr int kMenuFooterGap = design::spacing::k8;
+constexpr int kMinMenuItemHeight = design::spacing::k56;
 constexpr auto kProgressLabelRole = design::TypographyRole::kLabelSmallBlack;
 
 constexpr std::array<const char*, kDashboardMenuItemCount> kMenuLabels = {
-    "Follow up", "Summarize", "Vibe check", "Notes", "Todos",
+    "Follow up", "Summarize", "Vibe check", "Notes", "Todos", "Bible",
 };
 
 int PageWidth(int portrait_width)
@@ -51,13 +53,13 @@ MenuContainerState MenuState(const DashboardPageState& state)
     return {state.menu.selected_index, kDashboardMenuItemCount};
 }
 
-MenuContainerStyle MenuStyle(int width)
+MenuContainerStyle MenuStyle(int width, int item_height)
 {
     MenuContainerStyle style = {};
     style.direction = MenuContainerDirection::kVertical;
     style.sizing = MenuContainerSizing::kFixedItemExtent;
     style.width = width;
-    style.item_height = design::menu_item::kHeight;
+    style.item_height = item_height;
     style.item_gap = 0;
     return style;
 }
@@ -67,11 +69,11 @@ struct Layout {
     bool shows_banner = false;
     UiRect middle = {};
     int menu_y = 0;
+    int menu_item_height = design::menu_item::kHeight;
 };
 
 Layout BuildLayout(int portrait_width, int portrait_height, const DashboardPageState& state)
 {
-    (void)portrait_height;
     const int page_width = PageWidth(portrait_width);
     const int content_top = StatusBarHeight() + kContentTopGap;
 
@@ -88,6 +90,11 @@ Layout BuildLayout(int portrait_width, int portrait_height, const DashboardPageS
             ProgressBarBounds(kMargin, middle_y, state.current_progress, ProgressStyle(page_width));
     }
     layout.menu_y = layout.middle.bottom() + kMiddleMenuGap;
+    const int footer_top = portrait_height - design::global_footer::kBottomPadding -
+                           design::global_footer::kButtonSize;
+    const int fitted = (footer_top - kMenuFooterGap - layout.menu_y) / kDashboardMenuItemCount;
+    layout.menu_item_height =
+        std::clamp(fitted, kMinMenuItemHeight, static_cast<int>(design::menu_item::kHeight));
     return layout;
 }
 
@@ -139,7 +146,8 @@ UiRect DashboardMenuItemBounds(int portrait_width,
     }
     const Layout layout = BuildLayout(portrait_width, portrait_height, state);
     return MenuContainerItemBounds(kMargin, layout.menu_y, MenuState(state),
-                                   MenuStyle(PageWidth(portrait_width)), index);
+                                   MenuStyle(PageWidth(portrait_width), layout.menu_item_height),
+                                   index);
 }
 
 bool HitTestDashboardMenuItem(int portrait_width,
@@ -201,8 +209,9 @@ void DrawDashboardPage(uint8_t* framebuffer,
     }
 
     for (int index = 0; index < kDashboardMenuItemCount; ++index) {
-        const UiRect bounds = MenuContainerItemBounds(kMargin, layout.menu_y, MenuState(state),
-                                                      MenuStyle(page_width), index);
+        const UiRect bounds =
+            MenuContainerItemBounds(kMargin, layout.menu_y, MenuState(state),
+                                    MenuStyle(page_width, layout.menu_item_height), index);
         MenuItemState item = {};
         item.label_text = DashboardMenuItemLabel(index);
         item.selected = index == state.menu.selected_index;

@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "bible_page_runtime.h"
 #include "button_input_runtime.h"
 #include "button_service.h"
 #include "device_sleep_service.h"
@@ -438,6 +439,33 @@ void HandleOnboardingDismissIfRequested()
     }
 }
 
+// The reader is full-screen: no footer, UP/DOWN turn pages and OK opens its menu.
+esp_err_t ShowBibleScreen(display_service::RefreshMode refresh_mode)
+{
+    SyncStatusBarState("show_bible_screen");
+    footer_runtime::LayoutState hidden_footer = {};
+    hidden_footer.visible = false;
+    hidden_footer.show_mic = false;
+    footer_runtime::SetLayoutState(hidden_footer);
+    const esp_err_t page_err = bible_page_runtime::Prepare();
+    if (page_err != ESP_OK && page_err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(kTag, "Bible page state build failed: %s", esp_err_to_name(page_err));
+    }
+    return display_service::SetCurrentScreen(display_service::ScreenId::kBible, refresh_mode,
+                                             "show_bible_screen");
+}
+
+void HandleBibleExitIfRequested()
+{
+    if (!bible_page_runtime::ConsumePendingExit()) {
+        return;
+    }
+    const esp_err_t err = ShowHomeScreen(display_service::RefreshMode::kFull);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+        ESP_LOGW(kTag, "Bible exit -> home failed: %s", esp_err_to_name(err));
+    }
+}
+
 esp_err_t ShowDetailsScreen(const std::string& recording_id, DetailsPageSource source,
                             display_service::RefreshMode refresh_mode)
 {
@@ -709,6 +737,13 @@ bool HandleDashboardMenuItem(int menu_index, void*)
         }
         return true;
     }
+    if (menu_index == static_cast<int>(epaper_ui::DashboardMenuItem::kBible)) {
+        const esp_err_t err = ShowBibleScreen(display_service::RefreshMode::kFull);
+        if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
+            ESP_LOGW(kTag, "Show Bible screen failed: %s", esp_err_to_name(err));
+        }
+        return true;
+    }
     return false;
 }
 
@@ -883,6 +918,7 @@ void HandleRecordingSessionEvent(const recording_session_service::Event& event, 
         case recording_session_service::Phase::kAwaitingTagSelection: {
             time_page_runtime::ClearPendingSelectModal();
             ota_prompt_runtime::ClearPendingSelectModal();
+            bible_page_runtime::ClearPendingSelectModal();
             const esp_err_t err =
                 overlay_runtime::ShowSelectModal(BuildRecordingTagSelectModalState());
             FlushOverlayFeedback();
@@ -1242,12 +1278,15 @@ void HandleDispatchedButtonEvent(const button_service::ButtonEventInfo& event)
                 overlay_result.select_modal_selected_index) &&
             !time_page_runtime::HandleSelectModalSubmit(
                 overlay_result.select_modal_selected_index) &&
+            !bible_page_runtime::HandleSelectModalSubmit(
+                overlay_result.select_modal_selected_index) &&
             !ota_prompt_runtime::HandleSelectModalSubmit(
                 overlay_result.select_modal_selected_index)) {
             (void)recording_session_service::SubmitTagSelection(
                 overlay_result.select_modal_selected_index);
         }
         ShowDetailsScreenIfRequested();
+        HandleBibleExitIfRequested();
     }
     if (overlay_result.request_format_sd_card) {
         const esp_err_t err = storage_service::RequestFormatSdCard();
@@ -1338,6 +1377,7 @@ void HandleDispatchedButtonEvent(const button_service::ButtonEventInfo& event)
         HandleDetailsBackIfRequested();
         HandleOnboardingDismissIfRequested();
         ShowOnboardingFromSettingsIfRequested();
+        HandleBibleExitIfRequested();
         FlushOverlayFeedback();
         return;
     }

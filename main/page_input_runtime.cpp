@@ -2,6 +2,7 @@
 
 #include "epaper_ui/toast.h"
 
+#include "bible_page_runtime.h"
 #include "dashboard_page_interactions.h"
 #include "dashboard_page_runtime.h"
 #include "details_page_interactions.h"
@@ -1287,6 +1288,45 @@ ButtonResult HandleOnboardingButtonEvent(const button_service::ButtonEventInfo& 
     }
 }
 
+// --- Bible page ------------------------------------------------------------
+
+FocusMoveResult ApplyBibleMoveResult(const page_actions::FocusMoveOutcome& outcome)
+{
+    FocusMoveResult result = {};
+    if (!outcome.handled) {
+        return result;
+    }
+    result.handled = true;
+    result.interaction_result = MakeConsumedResult(outcome.play_navigation_cue);
+    return result;
+}
+
+ButtonResult HandleBibleButtonEvent(const button_service::ButtonEventInfo& event)
+{
+    ButtonResult result = {};
+    if (!button_service::IsPrimaryButton(event.button)) {
+        return result;
+    }
+
+    switch (event.event) {
+        case button_service::ButtonEvent::kSingleClick:
+            result.handled = bible_page_runtime::OpenMenu();
+            result.interaction_result = MakeConsumedResult(result.handled);
+            return result;
+        case button_service::ButtonEvent::kPressDown:
+        case button_service::ButtonEvent::kPressUp:
+        case button_service::ButtonEvent::kPressRepeat:
+        case button_service::ButtonEvent::kLongPressStart:
+        case button_service::ButtonEvent::kLongPressUp:
+            result.handled = true;
+            result.interaction_result.consumed = true;
+            return result;
+        case button_service::ButtonEvent::kDoubleClick:
+        default:
+            return result;
+    }
+}
+
 // --- Details page ----------------------------------------------------------
 
 esp_err_t ApplyDetailsPageAndFooterDisplayState()
@@ -1631,6 +1671,8 @@ FocusMoveResult MoveFocusForCurrentScreen(int delta, bool page_jump)
             return ApplyDetailsMoveResult(details_page_runtime::MoveFocus(delta));
         case display_service::ScreenId::kOnboarding:
             return ApplyOnboardingMoveResult(onboarding_page_runtime::MoveFocus(delta));
+        case display_service::ScreenId::kBible:
+            return ApplyBibleMoveResult(bible_page_runtime::MoveFocus(delta));
         case display_service::ScreenId::kLockScreen:
         default:
             return {};
@@ -1663,6 +1705,8 @@ ButtonResult HandleButtonEventForScreen(display_service::ScreenId screen,
             return HandleDetailsButtonEvent(event);
         case display_service::ScreenId::kOnboarding:
             return HandleOnboardingButtonEvent(event);
+        case display_service::ScreenId::kBible:
+            return HandleBibleButtonEvent(event);
         case display_service::ScreenId::kLockScreen:
         default:
             return {};

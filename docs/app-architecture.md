@@ -98,6 +98,11 @@ onboarding, and a set of feature pages plus overlays) built on:
   (`version.txt`), installs `followup-app.bin` with `esp_https_ota`, and only
   confirms a freshly installed image (cancelling rollback) once Wi-Fi connects.
   `main/ota_prompt_runtime` owns the install prompt and progress toasts.
+- A `bible_service` component that reads a Bible converted by
+  `scripts/bible_json_to_sd.py` from `/sdcard/bible/<abbr>/` (chapter text in a
+  PSRAM buffer) and persists the reading position in NVS. The full-screen
+  reader is `main/bible_page_{coordinator,runtime}` + `epaper_ui/bible_page`
+  (UP/DOWN turn pages, OK opens the reader menu, no global footer).
 The board carries an SHTC3 temperature/humidity sensor on the shared sensor I2C
 bus. It is not driven by any component today.
 

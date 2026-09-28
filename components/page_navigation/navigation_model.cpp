@@ -137,7 +137,7 @@ NavigationModel BuildDashboardPageNavigationModel()
     NavigationModel model = {};
     model.scope = NavigationScope::kDashboard;
 
-    for (int index = 0; index < 5; ++index) {
+    for (int index = 0; index < 6; ++index) {
         AddItem(model, NavigationItemSection::kDashboardPageMenu,
                 NavigationItemRole::kDashboardMenuItem, index);
     }

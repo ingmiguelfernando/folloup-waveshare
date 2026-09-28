@@ -91,6 +91,7 @@ epaper_ui::TodosPageState s_todos_page_state = {};
 epaper_ui::FollowUpPageState s_follow_up_page_state = {};
 epaper_ui::DetailsPageState s_details_page_state = {};
 epaper_ui::OnboardingPageState s_onboarding_page_state = {};
+epaper_ui::BiblePageState s_bible_page_state = {};
 epaper_ui::LockScreenState s_lock_screen_state = {};
 epaper_ui::KeyboardState s_keyboard_state = {};
 epaper_ui::CardModalState s_card_modal_state = {};
@@ -114,6 +115,7 @@ struct RenderSnapshot {
     epaper_ui::FollowUpPageState follow_up_page = {};
     epaper_ui::DetailsPageState details_page = {};
     epaper_ui::OnboardingPageState onboarding_page = {};
+    epaper_ui::BiblePageState bible_page = {};
     epaper_ui::LockScreenState lock_screen = {};
     epaper_ui::KeyboardState keyboard = {};
     epaper_ui::CardModalState card_modal = {};
@@ -189,6 +191,7 @@ const RenderSnapshot& CaptureRenderSnapshot()
     snapshot.follow_up_page = s_follow_up_page_state;
     snapshot.details_page = s_details_page_state;
     snapshot.onboarding_page = s_onboarding_page_state;
+    snapshot.bible_page = s_bible_page_state;
     snapshot.lock_screen = s_lock_screen_state;
     snapshot.keyboard = s_keyboard_state;
     snapshot.card_modal = s_card_modal_state;
@@ -476,6 +479,19 @@ void DrawOnboardingUnderlay(uint8_t* framebuffer, const RenderSnapshot& snapshot
                                   kPortraitHeight,
                                   snapshot.onboarding_page,
                                   snapshot.status_bar);
+}
+
+void DrawBibleUnderlay(uint8_t* framebuffer, const RenderSnapshot& snapshot)
+{
+    EpaperPanel& panel = Panel();
+    panel.Clear(true);
+    epaper_ui::DrawBiblePage(framebuffer,
+                             WAVESHARE_EPD_WIDTH,
+                             WAVESHARE_EPD_HEIGHT,
+                             kPortraitWidth,
+                             kPortraitHeight,
+                             snapshot.bible_page,
+                             snapshot.status_bar);
 }
 
 void DrawDetailsUnderlay(uint8_t* framebuffer, const RenderSnapshot& snapshot)
@@ -851,6 +867,25 @@ esp_err_t ApplyDetails(RefreshMode refresh_mode)
     return ESP_OK;
 }
 
+esp_err_t ApplyBible(RefreshMode refresh_mode)
+{
+    const RenderSnapshot& snapshot = CaptureRenderSnapshot();
+    EpaperPanel& panel = Panel();
+    DrawBibleUnderlay(panel.framebuffer(), snapshot);
+    CaptureUnderlaySnapshot(panel.framebuffer());
+    DrawCurrentOverlays(panel.framebuffer(), snapshot);
+
+    s_current_screen.store(ScreenId::kBible, std::memory_order_relaxed);
+    RefreshBusyGuard refresh_busy;
+    const esp_err_t err = RefreshForMode(panel, refresh_mode);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    LogMetrics(panel.metrics());
+    return ESP_OK;
+}
+
 bool HasVisibleOverlay(const RenderSnapshot& snapshot)
 {
     return snapshot.keyboard.visible || snapshot.card_modal.visible ||
@@ -985,6 +1020,9 @@ esp_err_t RefreshCurrentScreenRegionLocked()
         case ScreenId::kDetails:
             DrawDetailsUnderlay(panel.framebuffer(), snapshot);
             break;
+        case ScreenId::kBible:
+            DrawBibleUnderlay(panel.framebuffer(), snapshot);
+            break;
         case ScreenId::kLockScreen:
             DrawLockScreenUnderlay(panel.framebuffer(), snapshot);
             break;
@@ -1046,6 +1084,8 @@ esp_err_t RefreshCurrentScreenLocked(RefreshMode refresh_mode)
             return ApplyOnboarding(refresh_mode);
         case ScreenId::kDetails:
             return ApplyDetails(refresh_mode);
+        case ScreenId::kBible:
+            return ApplyBible(refresh_mode);
         case ScreenId::kLockScreen:
             return ApplyLockScreen(refresh_mode);
         default:
@@ -1147,6 +1187,8 @@ void DisplayTask(void*)
                 err = ApplyOnboarding(command.refresh_request.refresh_mode);
             } else if (command.screen == ScreenId::kDetails) {
                 err = ApplyDetails(command.refresh_request.refresh_mode);
+            } else if (command.screen == ScreenId::kBible) {
+                err = ApplyBible(command.refresh_request.refresh_mode);
             } else {
                 err = ApplyHomeScreen(command.refresh_request.refresh_mode);
             }
@@ -1406,6 +1448,17 @@ esp_err_t SetOnboardingPageState(const epaper_ui::OnboardingPageState& state)
 
     std::lock_guard<std::mutex> lock(s_state_mutex);
     s_onboarding_page_state = state;
+    return ESP_OK;
+}
+
+esp_err_t SetBiblePageState(const epaper_ui::BiblePageState& state)
+{
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    std::lock_guard<std::mutex> lock(s_state_mutex);
+    s_bible_page_state = state;
     return ESP_OK;
 }
 

@@ -366,8 +366,15 @@ Position LoadPosition()
     if (nvs_get_str(handle, kFileKey, file, &length) == ESP_OK) {
         position.filename = file;
     }
-    nvs_get_i32(handle, kPageKey, &position.page);
-    nvs_get_i32(handle, kSizeKey, &position.text_size);
+    // nvs_get_i32 wants int32_t*, which is `long` on Xtensa: read through a
+    // temporary like bible_service does.
+    int32_t value = 0;
+    if (nvs_get_i32(handle, kPageKey, &value) == ESP_OK) {
+        position.page = static_cast<int>(value);
+    }
+    if (nvs_get_i32(handle, kSizeKey, &value) == ESP_OK) {
+        position.text_size = static_cast<int>(value);
+    }
     nvs_close(handle);
     return position;
 }

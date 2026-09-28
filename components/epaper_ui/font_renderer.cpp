@@ -116,12 +116,16 @@ void DrawText(const DrawPixelFn& draw_pixel,
 {
     const FontSelection selection = FontForRole(role);
     int cursor_x = x;
-    for (size_t index = 0; index < text.size(); ++index) {
-        const epaper_font::GlyphBitmap* glyph =
-            epaper_font::FindGlyph(*selection.font, text[index]);
+    bool first_glyph = true;
+    epaper_font::ForEachGlyph(*selection.font, text, [&](uint32_t, const epaper_font::GlyphRef& ref) {
+        const epaper_font::GlyphBitmap* glyph = ref.glyph;
         if (glyph == nullptr) {
-            continue;
+            return true;
         }
+        if (!first_glyph) {
+            cursor_x += ScaleMetric(selection.tracking, selection);
+        }
+        first_glyph = false;
 
         const int glyph_x = cursor_x + ScaleMetric(glyph->bearing_x, selection);
         const int glyph_y = y + ScaleMetric(selection.font->ascent, selection) -
@@ -142,7 +146,7 @@ void DrawText(const DrawPixelFn& draw_pixel,
                 }
 
                 const uint8_t bit_mask = static_cast<uint8_t>(0x80U >> (bit_index % 8U));
-                if ((selection.font->bitmaps[byte_index] & bit_mask) == 0) {
+                if ((ref.bitmaps[byte_index] & bit_mask) == 0) {
                     continue;
                 }
 
@@ -161,10 +165,8 @@ void DrawText(const DrawPixelFn& draw_pixel,
         }
 
         cursor_x += ScaleMetric(glyph->advance, selection);
-        if (index + 1 < text.size()) {
-            cursor_x += ScaleMetric(selection.tracking, selection);
-        }
-    }
+        return true;
+    });
 }
 
 }  // namespace epaper_ui

@@ -17,6 +17,8 @@ The generators emit monochrome C++ assets for the SSD1677 e-paper UI:
 - `generate_epaper_footer_icons.py`: fixed `44x44` footer icon assets
 - `generate_epaper_logos.py`: aspect-ratio-preserving logo assets
 - `generate_epaper_fonts.py`: packed ASCII bitmap fonts from TTF files
+- `generate_epaper_font_extensions.py`: Latin-1 (Spanish accents, ñ, ¿, ¡)
+  glyph tables attached to the ASCII fonts
 - `generate_epaper_project_assets.py`: manifest-driven wrapper for all project
   image assets
 

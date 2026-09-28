@@ -7,7 +7,7 @@ Contexto para retomar el trabajo en una conversación nueva.
 - Placa: Waveshare ESP32-S3-ePaper-3.97 (ESP32-S3R8, 8 MB PSRAM octal, 16 MB flash, AXP2101, ES8311, SSD1677 800x480).
 - Docs oficiales: https://docs.waveshare.com/ESP32-S3-ePaper-3.97/Resources-And-Documents
 - Upstream: https://github.com/alxv2016/folloup-sticky, rama `folloup-waveshare`. El release v0.01 es para reTerminal Sticky y **no** sirve en esta placa.
-- Fork del usuario: https://github.com/ingmiguelfernando/folloup-waveshare (rama `folloup-waveshare`), clonado en `~/Documents/personal/folloup-waveshare`.
+- Fork del usuario: https://github.com/ingmiguelfernando/folloup-waveshare (rama `folloup-waveshare`), clonado en `~/Documents/Personal/folloup-waveshare`.
 - En el Mac del usuario no hay ESP-IDF ni `gh`; se compila solo en GitHub Actions.
 
 ## Compilar y flashear
@@ -33,7 +33,9 @@ Contexto para retomar el trabajo en una conversación nueva.
 2. **Access point sin DHCP**:
    - El iPhone y el Mac se asocian a `Followup-XXXXXX` (red abierta, portal en `http://192.168.4.1`), pero reciben `169.254.x.x` y el portal no carga.
    - Hipótesis (sin logs): RAM interna agotada. Los framebuffers ocupan ~96 KB a propósito (`components/epaper_panel/epaper_panel.cpp`), hay más de 20 tareas y los buffers de Wi-Fi están en RAM interna, así que se descartan los paquetes que llegan.
-   - Arreglo aplicado: los buffers de Wi-Fi/LWIP y de mbedTLS pasan a PSRAM (commit `eb113b9`). **Pendiente de probar en la placa.**
+   - Arreglo aplicado: los buffers de Wi-Fi/LWIP y de mbedTLS pasan a PSRAM (commit `eb113b9`).
+   - Resultado de `eb113b9` en la placa: al arrancar el AP sale `wifi:alloc eb len=752 type=4 fail` / `m f beacon`, y luego un panic `LoadProhibited` (EXCVADDR 0x2c) en core 0 dentro del driver Wi-Fi, en bucle. La RAM interna DMA no alcanza para el beacon.
+   - Siguiente intento (sin commit todavía): revertir `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP`, desactivar `CONFIG_ESP_WIFI_IRAM_OPT` y `CONFIG_ESP_WIFI_RX_IRAM_OPT` (en el S3 el IRAM sale de la misma SRAM que el heap), registrar el heap interno antes de `esp_wifi_start` y subir el `.elf` en el artifact para poder decodificar backtraces.
    - Atajo mientras tanto: IP manual en el cliente (`192.168.4.2`, máscara `255.255.255.0`, router `192.168.4.1`).
 3. **"Enable OTG" siempre falla** ("OTG failed"):
    - `components/storage_service/usb_storage_backend.cpp` iniciaba la SD a 40 MHz, sin pull-ups internas y sin fijar el slot. El montaje normal de la app usa slot 1, 20 MHz y pull-ups.
@@ -45,8 +47,8 @@ Build de `eb113b9`: éxito en CI.
 
 ## Uso del dispositivo
 
-- Botones: BOOT (GPIO0: grabar manteniendo pulsado / confirmar), arriba/centro/abajo (GPIO4/5/6), PWR (tecla del AXP2101).
-- PWR: pulsar ~1 s enciende; ~1 s con el equipo encendido abre la confirmación de apagado; 6 s fuerza el apagado. El botón sobrante probablemente es RESET.
+- Botones: BOOT (GPIO0: grabar manteniendo pulsado / confirmar), UP (GPIO4), FN/centro (GPIO5: activar, doble clic, pulsación larga), DOWN (GPIO6), PWR (tecla del AXP2101).
+- PWR: pulsar ~1 s enciende; toque corto con el equipo encendido bloquea/desbloquea; ~1 s abre la confirmación de apagado; 6 s fuerza el apagado. El botón sobrante probablemente es RESET.
 - Configuración inicial desde el portal del access point:
   - API key de Gemini (https://aistudio.google.com/). No meterla en `sdkconfig*` porque el repo es público.
   - Zona horaria (por defecto `North_America_Eastern`).

@@ -52,3 +52,16 @@ python3 scripts/generate_epaper_fonts.py \
 
 Do not hand-edit generated asset files once they are added. Update the source
 PNG/TTF files and regenerate instead.
+
+## Bible for the SD card
+
+`bible_json_to_sd.py` converts a YouVersion-style Bible JSON into the
+`bible/<abbr>/` layout the on-device Bible reader loads (stdlib only, runs on
+any OS). Bible text is copyrighted content and must never be committed here.
+
+```bash
+python3 scripts/bible_json_to_sd.py RVR1960_vid_149.json --out ./sd
+# then copy ./sd/bible to the root of the SD card
+```
+
+The file format is documented at the top of the script.

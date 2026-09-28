@@ -13,6 +13,7 @@
 
 #include "cJSON.h"
 #include "esp_event.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
@@ -144,6 +145,17 @@ void CheckOrAbort(esp_err_t err, const char* operation)
         ESP_LOGE(kTag, "%s failed: %s", operation, esp_err_to_name(err));
         ESP_ERROR_CHECK(err);
     }
+}
+
+// The SoftAP beacon and RX buffers must come from internal DMA RAM.
+void LogInternalHeap(const char* where)
+{
+    ESP_LOGI(kTag, "%s: internal DMA free=%u largest=%u min=%u", where,
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+             static_cast<unsigned>(
+                 heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+             static_cast<unsigned>(
+                 heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)));
 }
 
 UiState BuildUiStateLocked()
@@ -1145,6 +1157,7 @@ void EnterAccessPointModeNow()
     }
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_AP));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &config));
+    LogInternalHeap("Before AP start");
     ESP_ERROR_CHECK(esp_wifi_start());
 
     {
@@ -1209,6 +1222,7 @@ void StartStationAttempt(bool allow_ap_fallback)
             ConfigureAccessPointConfig(ap_ssid, &ap_config);
             ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_config));
         }
+        LogInternalHeap("Before Wi-Fi start");
         ESP_ERROR_CHECK(esp_wifi_start());
 
         {

@@ -22,4 +22,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: firmware
-          path: build/followup-waveshare.bin
+          # The .elf is needed to decode panic backtraces.
+          path: |
+            build/followup-waveshare.bin
+            build/*.elf

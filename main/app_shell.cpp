@@ -1333,6 +1333,8 @@ void HandleDispatchedButtonEvent(const button_service::ButtonEventInfo& event)
                 overlay_result.select_modal_selected_index) &&
             !bible_page_runtime::HandleSelectModalSubmit(
                 overlay_result.select_modal_selected_index) &&
+            !book_page_runtime::HandleSelectModalSubmit(
+                overlay_result.select_modal_selected_index) &&
             !reading_picker_runtime::HandleSelectModalSubmit(
                 overlay_result.select_modal_selected_index) &&
             !ota_prompt_runtime::HandleSelectModalSubmit(

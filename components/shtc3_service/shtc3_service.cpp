@@ -8,6 +8,7 @@
 #include "followup_task_config.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "sdkconfig.h"
 #include "shtc3.h"
 #include "waveshare_board.h"
 #include "waveshare_board_config.h"
@@ -20,8 +21,9 @@ constexpr const char* kTag = "Shtc3Service";
 constexpr uint32_t kPollIntervalMs = 30 * 1000;
 constexpr uint32_t kPollTaskStackWords = 3072;
 // The sensor sits next to the ESP32-S3 and the charger, so readings run warm
-// while Wi-Fi is active or the battery charges. Tunable trim; 0 means raw.
-constexpr float kTemperatureOffsetC = 0.0f;
+// while Wi-Fi is active or the battery charges; calibrated via Kconfig.
+constexpr float kTemperatureOffsetC =
+    static_cast<float>(CONFIG_FOLLOWUP_SHTC3_TEMPERATURE_OFFSET_TENTHS) / 10.0f;
 
 i2c_master_bus_handle_t s_sensor_bus = nullptr;
 Shtc3* s_sensor = nullptr;

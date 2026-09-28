@@ -91,6 +91,8 @@ bool ClearSavedCredentials();
 void RecoverAfterLightSleep();
 
 UiState GetUiState();
+// WPA2 passphrase of the Followup-XXXXXX setup access point (shown on screen in AP mode).
+std::string AccessPointPassword();
 ScanSnapshot GetScanSnapshot();
 bool IsConnected();
 bool IsAccessPointMode();

@@ -826,7 +826,8 @@ Runtime-persisted settings live in service-owned NVS namespaces:
 The build-time Wi-Fi/time defaults live under `Folloup Settings`:
 
 - `CONFIG_FOLLOWUP_WIFI_AP_PREFIX`
-- `CONFIG_FOLLOWUP_WIFI_AP_PASSWORD`
+- `CONFIG_FOLLOWUP_WIFI_AP_PASSWORD` (empty = per-device random passphrase)
+- `CONFIG_FOLLOWUP_SHTC3_TEMPERATURE_OFFSET_TENTHS`
 - `CONFIG_FOLLOWUP_WIFI_STA_SSID`
 - `CONFIG_FOLLOWUP_WIFI_STA_PASSWORD`
 - `CONFIG_FOLLOWUP_WIFI_START_IN_AP_MODE`
@@ -835,10 +836,14 @@ The build-time Wi-Fi/time defaults live under `Folloup Settings`:
 
 Saved NVS Wi-Fi credentials take precedence over built-in sdkconfig
 credentials. If neither exists, or if `CONFIG_FOLLOWUP_WIFI_START_IN_AP_MODE`
-is enabled, `wifi_service` enters WPA2 AP setup mode (passphrase from
-`CONFIG_FOLLOWUP_WIFI_AP_PASSWORD`) and serves the embedded portal plus the
-backend routes at the SoftAP URL, normally `http://192.168.4.1`, with captive
-DNS redirection (every A query answers 192.168.4.1). The portal frontend is the
+is enabled, `wifi_service` enters WPA2 AP setup mode and serves the embedded
+portal plus the backend routes at the SoftAP URL, normally `http://192.168.4.1`,
+with captive DNS redirection (every A query answers 192.168.4.1). The AP
+passphrase is `CONFIG_FOLLOWUP_WIFI_AP_PASSWORD` when set; otherwise each device
+generates a random one on first boot (NVS key `wifi/ap_password`), and
+`app_shell` shows SSID + password in a toast whenever setup mode starts. A
+connect deferred from the portal is only superseded by another radio
+transition, never by a scan. The portal frontend is the
 Vite app in `webserver/`; `npm run build` there regenerates
 `components/wifi_service/portal/`, which is embedded via `EMBED_FILES`. Saving
 credentials from `/api/configure` answers the HTTP response first and defers the

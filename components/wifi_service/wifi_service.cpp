@@ -12,11 +12,13 @@
 #include <vector>
 
 #include "cJSON.h"
+#include "bootloader_random.h"
 #include "esp_event.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_netif.h"
+#include "esp_random.h"
 #include "esp_timer.h"
 #include "esp_wifi.h"
 #include "followup_task_config.h"
@@ -34,6 +36,10 @@ constexpr const char* kTag = "WifiService";
 constexpr const char* kNvsNamespace = "wifi";
 constexpr const char* kSsidKey = "ssid";
 constexpr const char* kPasswordKey = "password";
+constexpr const char* kApPasswordKey = "ap_password";
+// No 0/O/1/l/i so the password survives being read off e-paper and typed on a phone.
+constexpr char kApPasswordAlphabet[] = "abcdefghjkmnpqrstuvwxyz23456789";
+constexpr size_t kApPasswordGroupLength = 5;
 constexpr const char* kApUrl = "http://192.168.4.1";
 constexpr int kConnectTimeoutSec = 60;
 // Grace period between answering the captive portal and the radio restart that follows
@@ -110,6 +116,8 @@ int s_rssi = 0;
 std::string s_current_ssid;
 std::string s_ip_address;
 std::string s_ap_ssid;
+// Written once in Init() before any AP starts; read-only afterwards.
+std::string s_ap_password;
 std::string s_ap_url = kApUrl;
 Credentials s_saved_credentials;
 Credentials s_active_credentials;
@@ -297,16 +305,15 @@ void ConfigureAccessPointConfig(const std::string& ap_ssid, uint8_t channel,
     // reconnect. Standalone setup has no target to follow and stays on channel 1.
     config->ap.channel = channel != 0 ? channel : 1;
     config->ap.max_connection = 4;
-    const char* password = CONFIG_FOLLOWUP_WIFI_AP_PASSWORD;
-    const size_t password_len = strlen(password);
+    const size_t password_len = s_ap_password.size();
     if (password_len >= 8 && password_len < sizeof(config->ap.password)) {
-        strlcpy(reinterpret_cast<char*>(config->ap.password), password,
+        strlcpy(reinterpret_cast<char*>(config->ap.password), s_ap_password.c_str(),
                 sizeof(config->ap.password));
         config->ap.authmode = WIFI_AUTH_WPA2_PSK;
     } else {
         // WPA2 passphrases must be 8..63 chars; fall back to an open AP rather than
         // feeding the driver a config it rejects at esp_wifi_set_config().
-        ESP_LOGW(kTag, "FOLLOWUP_WIFI_AP_PASSWORD must be 8..63 chars; starting open AP");
+        ESP_LOGW(kTag, "Setup AP password must be 8..63 chars; starting open AP");
         config->ap.authmode = WIFI_AUTH_OPEN;
     }
     config->ap.pmf_cfg.required = false;
@@ -461,6 +468,55 @@ bool ClearCredentialsFromNvs()
 Credentials ResolveStationCredentialsLocked()
 {
     return s_active_credentials.valid() ? s_active_credentials : s_saved_credentials;
+}
+
+std::string GenerateApPassword()
+{
+    // RF is not up yet, so esp_random() alone is only pseudo-random; borrow the
+    // SAR ADC entropy source for the one-time generation.
+    bootloader_random_enable();
+    constexpr size_t kAlphabetSize = sizeof(kApPasswordAlphabet) - 1;
+    constexpr uint32_t kUnbiasedLimit = (256 / kAlphabetSize) * kAlphabetSize;
+    std::string password;
+    while (password.size() < (2 * kApPasswordGroupLength) + 1) {
+        if (password.size() == kApPasswordGroupLength) {
+            password.push_back('-');
+            continue;
+        }
+        const uint32_t byte = esp_random() & 0xFF;
+        if (byte >= kUnbiasedLimit) {
+            continue;
+        }
+        password.push_back(kApPasswordAlphabet[byte % kAlphabetSize]);
+    }
+    bootloader_random_disable();
+    return password;
+}
+
+// A Kconfig password overrides; otherwise each device keeps its own random one in NVS.
+void LoadOrCreateApPassword()
+{
+    const std::string configured = CONFIG_FOLLOWUP_WIFI_AP_PASSWORD;
+    if (!configured.empty()) {
+        s_ap_password = configured;
+        return;
+    }
+
+    nvs_handle_t handle = 0;
+    if (nvs_open(kNvsNamespace, NVS_READWRITE, &handle) != ESP_OK) {
+        s_ap_password = GenerateApPassword();
+        ESP_LOGW(kTag, "Setup AP password could not be persisted");
+        return;
+    }
+    std::string stored;
+    if (!LoadString(handle, kApPasswordKey, &stored)) {
+        stored = GenerateApPassword();
+        if (nvs_set_str(handle, kApPasswordKey, stored.c_str()) == ESP_OK) {
+            (void)nvs_commit(handle);
+        }
+    }
+    nvs_close(handle);
+    s_ap_password = std::move(stored);
 }
 
 void UpdateAccessPointIdentity()
@@ -1074,8 +1130,9 @@ void InitializeStack()
 
 bool QueueTransition(TransitionRequest request)
 {
-    // A direct request supersedes any still-pending deferred one.
-    if (s_deferred_transition_timer != nullptr) {
+    // A new radio transition supersedes a pending deferred connect; a scan does not,
+    // or opening the Wi-Fi page would silently drop the portal's connect request.
+    if (s_deferred_transition_timer != nullptr && request != TransitionRequest::kStartScan) {
         (void)esp_timer_stop(s_deferred_transition_timer);
     }
     if (s_transition_queue == nullptr) {
@@ -1824,6 +1881,7 @@ esp_err_t Init()
     }
 
     ReloadSavedCredentials();
+    LoadOrCreateApPassword();
     s_initialized = true;
     ESP_LOGI(kTag, "Wi-Fi service initialized");
     return ESP_OK;
@@ -2074,6 +2132,11 @@ UiState GetUiState()
 {
     std::lock_guard<std::mutex> lock(s_state_mutex);
     return BuildUiStateLocked();
+}
+
+std::string AccessPointPassword()
+{
+    return s_ap_password;
 }
 
 ScanSnapshot GetScanSnapshot()

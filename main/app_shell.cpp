@@ -72,6 +72,7 @@ constexpr uint32_t kAutoSleepLightSleepTimeoutSeconds =
     CONFIG_FOLLOWUP_AUTO_SLEEP_LIGHT_SLEEP_TIMEOUT_SECONDS;
 constexpr uint32_t kShutdownTaskStackWords = 3072;
 constexpr TickType_t kPowerButtonReleaseSettleDelay = pdMS_TO_TICKS(500);
+constexpr uint32_t kSetupApToastMs = 30000;
 
 TaskHandle_t s_shutdown_task = nullptr;
 std::atomic<bool> s_startup_complete = false;
@@ -1290,6 +1291,15 @@ void HandleWifiEvent(const wifi_service::Event& event, void*)
     gemini_service::SetNetworkState(event.ui_state.connected,
                                     event.ui_state.access_point_mode);
     ota_service::SetNetworkConnected(event.ui_state.connected);
+
+    if (event.state == wifi_service::State::kAccessPointMode) {
+        // The setup AP is WPA2 with a per-device password; the screen is the only place to read it.
+        const std::string text = "Wi-Fi setup: join " + event.ui_state.ap_ssid + " password " +
+                                 wifi_service::AccessPointPassword() + ", then open " +
+                                 event.ui_state.ap_url;
+        (void)overlay_runtime::ShowToastForDuration(
+            BuildToast(text.c_str(), EmbeddedIconId::kWifiConfig), kSetupApToastMs);
+    }
 
     // Region scope, not screen scope. Wi-Fi events fire during and right after the page
     // transition, and a screen-scope partial re-inits the panel and drives it whatever the

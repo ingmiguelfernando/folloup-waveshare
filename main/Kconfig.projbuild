@@ -8,12 +8,23 @@ menu "Folloup Settings"
             The full AP SSID appends the last three Wi-Fi MAC bytes.
 
     config FOLLOWUP_WIFI_AP_PASSWORD
-        string "Wi-Fi AP password (8-63 chars)"
-        default "followupsetup"
+        string "Wi-Fi AP password override (8-63 chars)"
+        default ""
         help
-            WPA2 passphrase for the Followup-XXXXXX setup access point. Must be
-            8..63 characters; anything else falls back to an open AP with a
-            warning. Change it to keep neighbours off your setup network.
+            Leave empty (recommended): each device generates its own random
+            WPA2 passphrase on first boot, stores it in NVS and shows it on
+            screen when the setup AP starts. A non-empty value forces a fixed
+            passphrase; anything outside 8..63 characters falls back to an open
+            AP with a warning.
+
+    config FOLLOWUP_SHTC3_TEMPERATURE_OFFSET_TENTHS
+        int "SHTC3 temperature offset (tenths of a degree C)"
+        range -200 200
+        default 0
+        help
+            Added to every SHTC3 reading. The sensor sits next to the ESP32-S3
+            and the charger, so it tends to read warm; e.g. -25 subtracts 2.5 C.
+            Calibrate against a reference thermometer.
 
     config FOLLOWUP_WIFI_STA_SSID
         string "Built-in Wi-Fi SSID"

@@ -33,7 +33,8 @@ Contexto para retomar el trabajo en una conversación nueva. Para seguir en otro
    - `sdkconfig.defaults` tiene cambios del usuario, pero en la práctica no influye porque el `sdkconfig` completo tiene prioridad.
 2. **Access point sin DHCP**:
    - El iPhone y el Mac se asocian a `Followup-XXXXXX` (portal en `http://192.168.4.1`;
-     desde `d1c8432` la red es WPA2 con contraseña `followupsetup`), pero reciben
+     desde `d1c8432` la red es WPA2; la contraseña es propia de cada dispositivo y
+     aparece en pantalla al entrar en modo configuración), pero reciben
      `169.254.x.x` y el portal no carga.
    - Hipótesis (sin logs): RAM interna agotada. Los framebuffers ocupan ~96 KB a propósito (`components/epaper_panel/epaper_panel.cpp`), hay más de 20 tareas y los buffers de Wi-Fi están en RAM interna, así que se descartan los paquetes que llegan.
    - Arreglo aplicado: los buffers de Wi-Fi/LWIP y de mbedTLS pasan a PSRAM (commit `eb113b9`).

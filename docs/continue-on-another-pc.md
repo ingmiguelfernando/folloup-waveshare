@@ -166,8 +166,9 @@ Hechos el 2026-09-28 (commits `d1c8432`, `701d2aa`, `a7e1062`):
 
 - **Portal Wi-Fi** (`d1c8432`): responde antes de reiniciar el Wi-Fi (adiós al
   "Conectando" eterno), el AP arranca en el canal del router, `fetch` con timeout
-  de 10 s, y el AP ahora es **WPA2** con contraseña (por defecto `followupsetup`;
-  se cambia en `CONFIG_FOLLOWUP_WIFI_AP_PASSWORD`).
+  de 10 s, y el AP ahora es **WPA2**. La contraseña es aleatoria por dispositivo
+  (se guarda en NVS) y se muestra en pantalla al entrar en modo configuración;
+  `CONFIG_FOLLOWUP_WIFI_AP_PASSWORD` solo la fuerza si no está vacío.
 - **Sensor SHTC3** (`701d2aa`): driver + servicio (sondeo cada 30 s, lectura
   cacheada) y fila **"Environment"** en Ajustes con temperatura y humedad.
 - **Lector de libros `.txt`** (`a7e1062`): el menú principal muestra **"Read"**,
@@ -200,7 +201,7 @@ Pendientes:
 
 | Síntoma | Causa / solución |
 |---|---|
-| El AP `Followup-XXXXXX` pide contraseña | Es WPA2 desde `d1c8432`; contraseña por defecto `followupsetup` (`CONFIG_FOLLOWUP_WIFI_AP_PASSWORD`) |
+| El AP `Followup-XXXXXX` pide contraseña | Es WPA2; la contraseña de este dispositivo aparece en pantalla 30 s al entrar en modo configuración (activa "Access Point" en Ajustes para verla de nuevo) |
 | Reinicio en bucle con `ESP_ERR_NO_MEM` | Se compiló sin `sdkconfig.waveshare` |
 | `wifi:alloc eb len=752 ... fail` + `LoadProhibited` | Sin RAM interna para el AP; no activar `CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP` |
 | El móvil recibe `169.254.x.x` | DHCP del AP sin memoria; mismo origen |

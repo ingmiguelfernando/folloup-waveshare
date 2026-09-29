@@ -5,7 +5,8 @@ PC personal. Todo el código ya está en GitHub; este PC no hace falta.
 
 - Repo: https://github.com/ingmiguelfernando/folloup-waveshare
 - Rama: `folloup-waveshare`
-- Último commit al escribir esto: `b5e06de` (lector de Biblia)
+- Último commit al escribir esto: `ef711bc` (libros fase 2: EPUB, posición por
+  libro, "Go to %"), Release `build-21`
 
 ## 1. Estado actual
 
@@ -20,9 +21,14 @@ PC personal. Todo el código ya está en GitHub; este PC no hace falta.
 | `d1c8432` | Portal Wi-Fi: responde antes de reiniciar, canal del router, timeouts y AP WPA2 | No |
 | `701d2aa` | Sensor SHTC3: driver, servicio y fila "Environment" en Ajustes | No |
 | `a7e1062` | Lector de libros `.txt` con entrada unificada "Read" | No |
+| `fe14cad` | Fix de build: NVS `int32_t` en `book_service` (Xtensa: `int32_t` = `long`) | CI verde |
+| `d7b10a9` | Fix: el menú del lector de libros no recibía las selecciones del modal | No |
+| `957a647` | Contraseña del AP aleatoria por dispositivo (NVS + toast), conexión del portal a prueba de escaneos, offset de temperatura del SHTC3 | Parcial (log revisado) |
+| `16481a5` | Fix: SHTC3 reintenta cuando el bus I2C está ocupado por el sondeo del AXP2101 | No |
+| `ef711bc` | Libros fase 2: posición por libro, "Go to %", soporte EPUB (ZIP store) | No |
 
-Los tres últimos commits **nunca se han compilado para el ESP32**. Si la build de
-Actions falla, mira la sección 8.
+Todo compila en CI (último verde: `build-21`). Lo marcado "No" aún no se ha
+validado en la placa; mira la sección 8 si una build futura falla.
 
 ## 2. Preparar el PC
 
@@ -40,16 +46,19 @@ Actions falla, mira la sección 8.
 
 ## 3. Obtener el firmware
 
-1. Entra a **Actions** en GitHub y abre la ejecución del commit `b5e06de`.
+1. Entra a **Actions** en GitHub y abre la ejecución del último commit (o la
+   Release más reciente, hoy `build-21`).
 2. Si terminó en verde:
    - descarga el artifact **firmware** (trae `followup-waveshare.bin`,
      `followup-app.bin`, `.elf` y `version.txt`);
    - también queda una Release `build-N` con los mismos binarios.
 3. Si falló, copia el error del paso de build y sigue la sección 8.
 
-## 4. Flashear por cable (una última vez)
+## 4. Flashear por cable
 
-La placa todavía tiene un firmware sin OTA, así que esta vez hay que usar cable.
+Si la placa ya tiene un firmware con OTA (build-10 o posterior) y Wi-Fi
+configurado, es mejor actualizar por OTA (sección 7). Usa cable cuando la placa
+no conecte al Wi-Fi o quieras cambiar de partición/config.
 
 1. Abre https://espressif.github.io/esptool-js/ y conecta la placa por USB-C.
 2. Pulsa **Connect**. Si no la detecta, mantén BOOT pulsado mientras enchufas el
@@ -81,12 +90,14 @@ de RAM interna queda.
    alguno en las fuentes.
 3. Copia la carpeta `sd/bible` a la **raíz** de la microSD. Debe quedar
    `bible/rvr1960/index.tsv`, `GEN.txt`, `GEN.idx`, etc.
-4. (Opcional) Crea una carpeta `books/` en la **raíz** y copia ahí tus libros en
-   `.txt` (UTF-8 o Latin-1/Windows-1252, hasta 2 MB por fichero). Aparecerán en
-   el menú principal → **Read**.
+4. (Opcional) Crea una carpeta `books/` en la **raíz** y copia ahí tus libros:
+   `.txt` (UTF-8 o Latin-1/Windows-1252) o `.epub`, hasta 2 MB por fichero.
+   Aparecerán en el menú principal → **Read**. Los EPUB solo se leen si sus
+   capítulos están **sin comprimir** (ZIP store); si uno sale vacío, reexpórtalo
+   desde Calibre con compresión nivel 0.
 5. Inserta la SD en la placa y reinicia.
 
-## 6. Probar la Biblia
+## 6. Probar la BibliaRead** → **
 
 Entra desde el menú principal → **Bible**.
 
@@ -125,8 +136,8 @@ hasta el siguiente reinicio.
 
 ## 8. Si la build de Actions falla
 
-Los últimos commits solo se comprobaron con `clang` en el Mac, no con el
-compilador del ESP32. Pide a Copilot:
+Todo lo subido hasta `build-21` compila en CI. Si un cambio nuevo falla, pide a
+Copilot:
 
 > La build de GitHub Actions falla con este error: <pega el error>. Lee AGENTS.md
 > y docs/app-architecture.md y corrígelo sin cambiar el comportamiento.
@@ -135,7 +146,11 @@ Archivos más probables:
 
 - `components/ota_service/ota_service.cpp` (API de `esp_https_ota`, `esp_app_desc.h`)
 - `components/bible_service/bible_service.cpp`
+- `components/book_service/book_service.cpp` (ZIP/EPUB, NVS por libro)
+- `components/shtc3/shtc3.cc`, `components/shtc3_service/shtc3_service.cpp`
 - `main/bible_page_runtime.cpp`, `main/bible_page_coordinator.cpp`
+- `main/book_page_runtime.cpp`, `main/book_page_coordinator.cpp`,
+  `main/reading_picker_runtime.cpp`
 - `components/epaper_ui/bitmap_font.cpp`, `font_renderer.cpp`
 
 ## 9. Contexto para Copilot en el otro PC
@@ -162,23 +177,27 @@ Datos clave que conviene recordar (también están en los docs):
 
 ## 10. Siguientes pasos
 
-Hechos el 2026-09-28 (commits `d1c8432`, `701d2aa`, `a7e1062`):
+Hechos el 2026-09-28/29 (commits `d1c8432`…`ef711bc`, builds 13-21):
 
-- **Portal Wi-Fi** (`d1c8432`): responde antes de reiniciar el Wi-Fi (adiós al
-  "Conectando" eterno), el AP arranca en el canal del router, `fetch` con timeout
-  de 10 s, y el AP ahora es **WPA2**. La contraseña es aleatoria por dispositivo
-  (se guarda en NVS) y se muestra en pantalla al entrar en modo configuración;
-  `CONFIG_FOLLOWUP_WIFI_AP_PASSWORD` solo la fuerza si no está vacío.
-- **Sensor SHTC3** (`701d2aa`): driver + servicio (sondeo cada 30 s, lectura
-  cacheada) y fila **"Environment"** en Ajustes con temperatura y humedad.
-- **Lector de libros `.txt`** (`a7e1062`): el menú principal muestra **"Read"**,
-  que abre un selector entre la Biblia y los libros de `/sdcard/books/*.txt`
-  (páginas, tamaño de texto, posición recordada y "Go to page").
+- **Portal Wi-Fi** (`d1c8432` + `957a647`): responde antes de reiniciar el
+  Wi-Fi (adiós al "Conectando" eterno), el AP arranca en el canal del router,
+  `fetch` con timeout de 10 s, y el AP es **WPA2** con contraseña aleatoria por
+  dispositivo (NVS + toast de 30 s al entrar en modo configuración).
+- **Sensor SHTC3** (`701d2aa` + `16481a5` + `957a647`): driver + servicio
+  (sondeo cada 30 s, lectura cacheada, reintento si el bus I2C está ocupado por
+  el AXP2101), fila **"Environment"** en Ajustes y offset de temperatura
+  configurable (`CONFIG_FOLLOWUP_SHTC3_TEMPERATURE_OFFSET_TENTHS`).
+- **Lector de libros** (`a7e1062`, `d7b10a9`, `fe14cad`, `ef711bc`): entrada
+  **"Read"** en el menú principal con selector (Continue ⟨título⟩ / Bible /
+  libros de `/sdcard/books/`). Soporta `.txt` (UTF-8 o Latin-1) y `.epub`
+  (ZIP store). Posición y tamaño de texto **por libro** en NVS, menú con
+  "Go to page", "Go to %", "Text size", "About", "Exit".
 
 Pendientes:
 
 1. **Validar en la placa**: Biblia, fuentes con acentos, OTA, OTG, portal Wi-Fi
-   (contraseña y fin del "Conectando"), fila del SHTC3 y lector de libros.
+   (contraseña y fin del "Conectando"), fila del SHTC3, lector de libros
+   (`.txt` y `.epub`, posición por libro, "Go to %").
 2. **Rediseño de la interfaz** (propuesto):
    - inicio con cuadrícula de iconos: Capturar (grabar / transcribir / resumir),
      Notas, Tareas, Seguimiento, Biblioteca (libros), Biblia, Audios, Fotos,
@@ -188,8 +207,8 @@ Pendientes:
    - barra inferior con pistas según la pantalla («Back | Select | < | >») en vez
      de la barra de iconos;
    - mantener la pantalla de bloqueo actual (hora, fecha, día).
-3. **Lector de libros, fase 2**: EPUB, posición por libro (hoy solo se recuerda el
-   último abierto) y salto por porcentaje.
+3. **Lector de libros, fase 3**: EPUB con capítulos comprimidos (inflate),
+   índice/capítulos del EPUB como unidades de navegación, marcadores.
 4. **Sincronizar notas, tareas y audio con el iPhone por Wi-Fi**: API local
    autenticada con token, `followup.local` (mDNS) y la app Atajos.
 5. **Revisar el fork [mach1na/folloup](https://github.com/mach1na/folloup)**, que
@@ -209,4 +228,6 @@ Pendientes:
 | "Saved. Gemini not ready" | API key no validada; busca `Gemini authentication failed` |
 | No hay transcripciones | Falta SD o no se eligió Note/Task/Idea tras grabar |
 | El portal se queda en "Conectando" | Resuelto en `d1c8432` (responde antes de reiniciar). Si aún falla, recarga la página tras ~30-60 s |
-| "Read" no lista tus libros | La carpeta `books/` va en la **raíz** de la SD, ficheros `.txt` de hasta 2 MB (UTF-8 o Latin-1) |
+| "Read" no lista tus libros | La carpeta `books/` va en la **raíz** de la SD; `.txt` o `.epub` de hasta 2 MB (UTF-8 o Latin-1) |
+| Un EPUB abre vacío o faltan capítulos | Sus capítulos están comprimidos (deflate); reexpórtalo desde Calibre con compresión nivel 0 (store) |
+| "Environment" dice Unavailable | El SHTC3 no respondió en el primer sondeo; mira `Shtc3`/`Shtc3Service` en el log (el bus compartido reintenta solo) |
